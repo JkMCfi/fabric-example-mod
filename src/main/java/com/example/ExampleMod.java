@@ -16,15 +16,14 @@ public class ExampleMod implements ModInitializer {
     private long lastPurchaseTime = 0;
     private final long PURCHASE_COOLDOWN_MS = 2500;
 
-    // Rakennusjono, johon voidaan lisätä koordinaatteja
+    // Rakennusjono koordinaateille
     private final Queue<BlockPos> buildQueue = new LinkedList<>();
 
     @Override
     public void onInitialize() {
         System.out.println("[AutoBuilder] Mod initialized successfully!");
 
-        // Lisätään testiksi muutama koordinaatti jonoon (voit vaihtaa nämä peli-koordinatteihisi)
-        // Esimerkiksi pelaajan edessä olevat paikat
+        // Lisätään testiksi muutama koordinaatti jonoon
         buildQueue.add(new BlockPos(0, 64, 0));
         buildQueue.add(new BlockPos(1, 64, 0));
 
@@ -86,6 +85,11 @@ public class ExampleMod implements ModInitializer {
 
         // Käännytään kohteeseen koordinaattien perusteella
         smoothLookAt(client, target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
+
+        System.out.println("[AutoBuilder] Placing block at: " + target.toShortString());
+
+        // Poistetaan tehty kohde jonosta, jotta siirrytään seuraavaan
+        buildQueue.poll();
     }
 
     private void smoothLookAt(MinecraftClient client, double targetX, double targetY, double targetZ) {
