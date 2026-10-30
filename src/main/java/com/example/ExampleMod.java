@@ -4,7 +4,11 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.LinkedList;
 import java.util.Queue;
@@ -83,12 +87,23 @@ public class ExampleMod implements ModInitializer {
     private void placeNextBlock(MinecraftClient client, BlockPos target) {
         if (client.player == null || client.world == null) return;
 
-        // Käännytään kohteeseen koordinaattien perusteella
+        // 1. Käännytään kohteeseen koordinaattien perusteella
         smoothLookAt(client, target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
 
         System.out.println("[AutoBuilder] Placing block at: " + target.toShortString());
 
-        // Poistetaan tehty kohde jonosta, jotta siirrytään seuraavaan
+        // 2. Suoritetaan oikea blokin asetus (simuloidaan hiiren oikeaa klikkausta)
+        if (client.interactionManager != null) {
+            BlockHitResult hitResult = new BlockHitResult(
+                new Vec3d(target.getX() + 0.5, target.getY(), target.getZ() + 0.5),
+                Direction.UP,
+                target,
+                false
+            );
+            client.interactionManager.interactBlock(client.player, Hand.MAIN_HAND, hitResult);
+        }
+
+        // 3. Poistetaan tehty kohde jonosta, jotta siirrytään seuraavaan
         buildQueue.poll();
     }
 
