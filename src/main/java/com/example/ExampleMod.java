@@ -26,10 +26,14 @@ public class ExampleMod implements ModInitializer {
     private void runAutoBuilderLoop(MinecraftClient client) {
         String requiredItem = "quartz";
 
+        // 1. Jos tavara puuttuu inventaariosta, ostetaan se /ah kautta
         if (!hasItemInInventory(client, requiredItem)) {
             buyItemFromAuctionHouse(client, requiredItem);
             return;
         }
+
+        // 2. Jos tavara löytyy, siirrytään rakennus- ja katsomisvaiheeseen
+        placeNextBlock(client);
     }
 
     private boolean hasItemInInventory(MinecraftClient client, String itemName) {
@@ -56,6 +60,19 @@ public class ExampleMod implements ModInitializer {
 
         lastPurchaseTime = currentTime;
     }
+
+    private void placeNextBlock(MinecraftClient client) {
+        if (client.player == null || client.world == null) return;
+
+        // Esimerkkikoordinaatit, joihin botti katsoo ja rakentaa
+        double targetX = client.player.getX() + 2.0;
+        double targetY = client.player.getY();
+        double targetZ = client.player.getZ();
+
+        // Käännytään sulavasti kohteeseen
+        smoothLookAt(client, targetX, targetY, targetZ);
+    }
+
     private void smoothLookAt(MinecraftClient client, double targetX, double targetY, double targetZ) {
         if (client.player == null) return;
 
@@ -65,15 +82,13 @@ public class ExampleMod implements ModInitializer {
 
         double distanceXZ = Math.sqrt(dx * dx + dz * dz);
 
-        // Lasketaan tarvittavat kulmat (Yaw ja Pitch)
         float targetYaw = (float) (Math.atan2(dz, dx) * (180 / Math.PI)) - 90.0F;
         float targetPitch = (float) (-(Math.atan2(dy, distanceXZ) * (180 / Math.PI)));
 
-        // Pehmennetään kääntymistä
         float currentYaw = client.player.getYaw();
         float currentPitch = client.player.getPitch();
 
-        float speed = 15.0F; // Mitä pienempi luku, sitä hitaammin ja pehmeämmin hahmo kääntyy
+        float speed = 15.0F;
         client.player.setYaw(currentYaw + limitAngleChange(targetYaw - currentYaw, speed));
         client.player.setPitch(currentPitch + limitAngleChange(targetPitch - currentPitch, speed));
     }
