@@ -56,4 +56,31 @@ public class ExampleMod implements ModInitializer {
 
         lastPurchaseTime = currentTime;
     }
+    private void smoothLookAt(MinecraftClient client, double targetX, double targetY, double targetZ) {
+        if (client.player == null) return;
+
+        double dx = targetX - client.player.getX();
+        double dy = targetY - (client.player.getY() + client.player.getEyeHeight(client.player.getPose()));
+        double dz = targetZ - client.player.getZ();
+
+        double distanceXZ = Math.sqrt(dx * dx + dz * dz);
+
+        // Lasketaan tarvittavat kulmat (Yaw ja Pitch)
+        float targetYaw = (float) (Math.atan2(dz, dx) * (180 / Math.PI)) - 90.0F;
+        float targetPitch = (float) (-(Math.atan2(dy, distanceXZ) * (180 / Math.PI)));
+
+        // Pehmennetään kääntymistä
+        float currentYaw = client.player.getYaw();
+        float currentPitch = client.player.getPitch();
+
+        float speed = 15.0F; // Mitä pienempi luku, sitä hitaammin ja pehmeämmin hahmo kääntyy
+        client.player.setYaw(currentYaw + limitAngleChange(targetYaw - currentYaw, speed));
+        client.player.setPitch(currentPitch + limitAngleChange(targetPitch - currentPitch, speed));
+    }
+
+    private float limitAngleChange(float diff, float maxSpeed) {
+        if (diff < -maxSpeed) return -maxSpeed;
+        if (diff > maxSpeed) return maxSpeed;
+        return diff;
+    }
 }
