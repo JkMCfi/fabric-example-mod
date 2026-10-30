@@ -4,6 +4,10 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.BlockPos;
+
+import java.util.LinkedList;
+import java.util.Queue;
 
 public class ExampleMod implements ModInitializer {
 
@@ -12,9 +16,17 @@ public class ExampleMod implements ModInitializer {
     private long lastPurchaseTime = 0;
     private final long PURCHASE_COOLDOWN_MS = 2500;
 
+    // Rakennusjono, johon voidaan lisätä koordinaatteja
+    private final Queue<BlockPos> buildQueue = new LinkedList<>();
+
     @Override
     public void onInitialize() {
         System.out.println("[AutoBuilder] Mod initialized successfully!");
+
+        // Lisätään testiksi muutama koordinaatti jonoon (voit vaihtaa nämä peli-koordinatteihisi)
+        // Esimerkiksi pelaajan edessä olevat paikat
+        buildQueue.add(new BlockPos(0, 64, 0));
+        buildQueue.add(new BlockPos(1, 64, 0));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (isBuildingActive && client.player != null) {
@@ -32,8 +44,16 @@ public class ExampleMod implements ModInitializer {
             return;
         }
 
-        // 2. Jos tavara löytyy, siirrytään rakennus- ja katsomisvaiheeseen
-        placeNextBlock(client);
+        // 2. Jos jono on tyhjä, ei tehdä mitään
+        if (buildQueue.isEmpty()) {
+            return;
+        }
+
+        // 3. Otetaan seuraava kohde jonosta ja rakennetaan
+        BlockPos nextTarget = buildQueue.peek();
+        if (nextTarget != null) {
+            placeNextBlock(client, nextTarget);
+        }
     }
 
     private boolean hasItemInInventory(MinecraftClient client, String itemName) {
@@ -61,16 +81,11 @@ public class ExampleMod implements ModInitializer {
         lastPurchaseTime = currentTime;
     }
 
-    private void placeNextBlock(MinecraftClient client) {
+    private void placeNextBlock(MinecraftClient client, BlockPos target) {
         if (client.player == null || client.world == null) return;
 
-        // Esimerkkikoordinaatit, joihin botti katsoo ja rakentaa
-        double targetX = client.player.getX() + 2.0;
-        double targetY = client.player.getY();
-        double targetZ = client.player.getZ();
-
-        // Käännytään sulavasti kohteeseen
-        smoothLookAt(client, targetX, targetY, targetZ);
+        // Käännytään kohteeseen koordinaattien perusteella
+        smoothLookAt(client, target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
     }
 
     private void smoothLookAt(MinecraftClient client, double targetX, double targetY, double targetZ) {
