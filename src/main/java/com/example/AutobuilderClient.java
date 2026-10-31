@@ -1,5 +1,6 @@
 package com.example;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -15,7 +16,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
@@ -40,6 +43,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.RaycastContext;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -48,7 +52,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -110,10 +113,37 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
+        // TOIMIVAKSI KORJATTU HOLOGRAMMI / RENDERÖINTI
         WorldRenderEvents.LAST.register(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
-            if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null) {
-                // Hologram placeholder
+            if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null && client.player != null) {
+                MatrixStack matrices = context.matrixStack();
+                Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
+
+                matrices.push();
+                matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+
+                Tessellator tessellator = Tessellator.getInstance();
+                BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR);
+                RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+                RenderSystem.lineWidth(2.0F);
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+
+                Matrix4f matrix4f = matrices.peek().getPositionMatrix();
+
+                // Piirretään haamulaatikko / hologrammi seuraavalle rakennettavalle palikalle
+                for (BlockData blockData : buildQueue) {
+                    // Näytetään vain lähellä olevat palikat, ettei peli lagaa
+                    if (blockData.pos.getSquaredDistance(client.player.getBlockPos()) < 100) {
+                        Box box = new Box(blockData.pos);
+                        WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, 0.0f, 1.0f, 1.0f, 0.4f);
+                    }
+                }
+
+                BufferRenderer.drawWithGlobalProgram(buffer.end());
+                RenderSystem.disableBlend();
+                matrices.pop();
             }
         });
 
@@ -466,14 +496,12 @@ public class AutobuilderClient implements ClientModInitializer {
     }
 
     private int findItemOrBringToHotbar(MinecraftClient client, net.minecraft.item.Item targetItem) {
-        // Tarkistetaan ensin hotbar (0-8)
         for (int i = 0; i < 9; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (!stack.isEmpty() && stack.getItem() == targetItem) {
                 return i;
             }
         }
-        // Jos ei ole hotbarissa, mutta löytyy inventoriosta (9-35), siirretään tyhjään hotbar-slottiin
         for (int i = 9; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
             if (!stack.isEmpty() && stack.getItem() == targetItem) {
@@ -718,7 +746,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
         public OnlineSchematicBrowserScreen() {
             super(Text.literal("Online Schematics (Donut.build)"));
-            // Kaikki DonutSMP buildit ja esikatselutiedot lisätty täydellisesti
             allSchematics.add(new OnlineSchematic("Farm_Template.litematic", "https://donut.build/api/schematics/farm_template.litematic", "Automated crop and vegetable farm.", "[Preview: Standard 9x9 Crop Farm]"));
             allSchematics.add(new OnlineSchematic("Storage_System.litematic", "https://donut.build/api/schematics/storage_system.litematic", "Compact auto-sorting item storage.", "[Preview: Auto-Sorter Chest Wall]"));
             allSchematics.add(new OnlineSchematic("Mob_Grinder.litematic", "https://donut.build/api/schematics/mob_grinder.litematic", "High-efficiency XP and drop grinder.", "[Preview: Dark Spawner Trap]"));
