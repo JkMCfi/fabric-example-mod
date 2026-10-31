@@ -113,7 +113,7 @@ public class AutobuilderClient implements ClientModInitializer {
         WorldRenderEvents.LAST.register(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null && client.player != null) {
-                // Turvallinen hologrammi-indikaattori
+                // Turvallinen renderöinti
             }
         });
 
@@ -231,18 +231,15 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
-                // Poistetaan tilapäinen dirt-palikka, kun pelaaja on noussut sen yläpuolelle
                 if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 1) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
                 }
 
-                // Jumiutumisen tunnistus: jos pelaaja ei liiku, kasvatetaan laskuria
                 if (lastPlayerPos != null && client.player.getPos().squaredDistanceTo(lastPlayerPos) < 0.001) {
                     absoluteStuckCounter++;
                     if (absoluteStuckCounter > 15) {
                         absoluteStuckCounter = 0;
-                        // Asetetaan välittömästi dirt jalan alle ja hypätään (Jumiutumisen esto)
                         int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
                         if (dirtSlot != -1) {
                             client.player.getInventory().selectedSlot = dirtSlot;
@@ -271,7 +268,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 BlockData blockData = buildQueue.peek();
 
-                // Estetään palikan rakentaminen suoraan pelaajan osumalaatikkoon
                 Box playerBox = client.player.getBoundingBox();
                 Box blockBox = new Box(blockData.pos);
                 if (playerBox.intersects(blockBox)) {
@@ -582,7 +578,20 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
+                // TÄRKEÄMUUTOS: Järjestetään ensin redstone viimeiseksi, sitten alhaalta ylöspäin (Y-koordinaatti) ja vasta sitten etäisyyden mukaan
                 tempQueue.sort((b1, b2) -> {
+                    boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator") || b1.blockName.contains("chest");
+                    boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator") || b2.blockName.contains("chest");
+                    
+                    if (isRedstone1 && !isRedstone2) return 1;
+                    if (!isRedstone1 && isRedstone2) return -1;
+
+                    // Kerros kerrokselta alhaalta ylös (Lattia ensin!)
+                    int yCompare = Integer.compare(b1.pos.getY(), b2.pos.getY());
+                    if (yCompare != 0) {
+                        return yCompare;
+                    }
+
                     double dist1 = client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b1.pos));
                     double dist2 = client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b2.pos));
                     return Double.compare(dist1, dist2);
@@ -595,7 +604,7 @@ public class AutobuilderClient implements ClientModInitializer {
                     isPaused = false;
                     waitingForAhConfirmation = false;
                     if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
+                        client.player.sendMessage(Text.literal("§aBuilding started (Floor first)! Total blocks: " + buildQueue.size()), false);
                     }
                 }
             }
