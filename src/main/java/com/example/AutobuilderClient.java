@@ -6,6 +6,9 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.BlockItem;
@@ -15,6 +18,7 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.registry.Registries;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -27,13 +31,23 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 public class AutobuilderClient implements ClientModInitializer {
     private static KeyBinding buildKey;
+    private static KeyBinding menuKey;
     private static final Queue<BlockData> buildQueue = new LinkedList<>();
     private static boolean isBuilding = false;
+    private static boolean waitingForAhConfirmation = false;
+    
+    // Säädettävät arvot (muokattavissa myös menusta)
+    public static int tickDelay = 3; // Oletuksena hieman hitaampi
+    public static float smoothness = 8.0f; // Erittäin sulava katseen kääntö
+    private static int tickCounter = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -54,17 +68,38 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
+        menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.autobuilder.menu",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_M,
+                "category.autobuilder"
+        ));
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (menuKey.wasPressed()) {
+                if (client.player != null) {
+                    client.setScreen(new AutobuilderMenuScreen());
+                }
+            }
+
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
+                    if (waitingForAhConfirmation) {
+                        client.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                        client.player.sendMessage(Text.literal("§aAutoBuilder: /ah osto hyväksytty!"), false);
+                        client.player.networkHandler.sendChatCommand("ah");
+                        waitingForAhConfirmation = false;
+                        isBuilding = false;
+                        return;
+                    }
+
                     if (isBuilding) {
-                        // Painamalla uudelleen keskeytetään / laitetaan pauselle
                         isBuilding = false;
                         client.options.forwardKey.setPressed(false);
                         client.options.jumpKey.setPressed(false);
-                        client.player.sendMessage(Text.literal("§eAutoBuilder: Paused!"), false);
+                        client.player.sendMessage(Text.literal("§eAutoBuilder: Pausetettu!"), false);
                     } else {
-                        client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
+                        client.player.sendMessage(Text.literal("§aAutoBuilder: Ladataan schematiciä..."), false);
                         loadAndParseSchematic(client);
                     }
                 }
@@ -75,9 +110,15 @@ public class AutobuilderClient implements ClientModInitializer {
                     isBuilding = false;
                     client.options.forwardKey.setPressed(false);
                     client.options.jumpKey.setPressed(false);
-                    client.player.sendMessage(Text.literal("§aAutoBuilder: Building complete!"), false);
+                    client.player.sendMessage(Text.literal("§aAutoBuilder: Rakennus valmis!"), false);
                     return;
                 }
+
+                if (tickCounter < tickDelay) {
+                    tickCounter++;
+                    return;
+                }
+                tickCounter = 0;
 
                 BlockData blockData = buildQueue.peek();
 
@@ -100,13 +141,16 @@ public class AutobuilderClient implements ClientModInitializer {
                         ItemStack blockStack = new ItemStack(block);
                         client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
                         client.player.getInventory().setStack(slot, blockStack);
-                        client.player.sendMessage(Text.literal("§7Auto-fetched: " + blockData.blockName), true);
+                        client.player.sendMessage(Text.literal("§7Haettu (Creative): " + blockData.blockName), true);
                     } else {
-                        client.player.sendMessage(Text.literal("§cOut of items! Opening /ah..."), false);
-                        client.player.networkHandler.sendChatCommand("ah");
+                        // Survival & /ah hintavahti (>200k osto vaatii vahvistuksen)
                         isBuilding = false;
                         client.options.forwardKey.setPressed(false);
                         client.options.jumpKey.setPressed(false);
+                        waitingForAhConfirmation = true;
+
+                        client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0F, 0.3F);
+                        client.player.sendMessage(Text.literal("§c[AutoBuilder] Palikat loppu! /ah hinta ylittää mahdollisesti 200k. §ePaina N uudelleen hyväksyksesi."), false);
                         return;
                     }
                 }
@@ -118,12 +162,11 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 smoothLookAt(client, targetVec);
 
-                // Jos ollaan kaukana, kävellään kohteeseen
+                // Anti-stuck: hypätään automaattisesti jos jää jumiin
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
                     
-                    // ANTI-STUCK: Jos hahmo törmää seinään/esteeseen matkalla, hypätään automaattisesti
-                    if (client.player.horizontalCollision) {
+                    if (client.player.horizontalCollision || client.player.verticalCollision) {
                         client.options.jumpKey.setPressed(true);
                     } else {
                         client.options.jumpKey.setPressed(false);
@@ -153,10 +196,10 @@ public class AutobuilderClient implements ClientModInitializer {
                 client.player.swingHand(Hand.MAIN_HAND);
 
                 if (result.isAccepted()) {
-                    client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
+                    client.player.sendMessage(Text.literal("§7Asetettu: " + blockData.blockName), true);
                 } else {
                     client.world.setBlockState(blockData.pos, block.getDefaultState());
-                    client.player.sendMessage(Text.literal("§7Force-placed: " + blockData.blockName), true);
+                    client.player.sendMessage(Text.literal("§7Pakkoasetettu: " + blockData.blockName), true);
                 }
             }
         });
@@ -180,9 +223,8 @@ public class AutobuilderClient implements ClientModInitializer {
         float yawDiff = MathHelper.wrapDegrees(targetYaw - currentYaw);
         float pitchDiff = targetPitch - currentPitch;
 
-        float maxStep = 30.0f;
-        float newYaw = currentYaw + MathHelper.clamp(yawDiff, -maxStep, maxStep);
-        float newPitch = currentPitch + MathHelper.clamp(pitchDiff, -maxStep, maxStep);
+        float newYaw = currentYaw + MathHelper.clamp(yawDiff, -smoothness, smoothness);
+        float newPitch = currentPitch + MathHelper.clamp(pitchDiff, -smoothness, smoothness);
 
         client.player.setYaw(newYaw);
         client.player.setPitch(newPitch);
@@ -215,12 +257,12 @@ public class AutobuilderClient implements ClientModInitializer {
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
-                client.player.sendMessage(Text.literal("§cError: No .litematic files found!"), false);
+                client.player.sendMessage(Text.literal("§cVirhe: .litematic tiedostoja ei löydy!"), false);
                 return;
             }
 
             File schematicFile = files[0];
-            client.player.sendMessage(Text.literal("§eFound file: " + schematicFile.getName()), false);
+            client.player.sendMessage(Text.literal("§eLöytyi tiedosto: " + schematicFile.getName()), false);
 
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             
@@ -228,6 +270,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 NbtCompound regions = nbt.getCompound("Regions");
                 buildQueue.clear();
                 BlockPos playerPos = client.player.getBlockPos();
+                List<BlockData> tempQueue = new ArrayList<>();
 
                 for (String regionName : regions.getKeys()) {
                     NbtCompound region = regions.getCompound(regionName);
@@ -241,7 +284,6 @@ public class AutobuilderClient implements ClientModInitializer {
                         sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : sizeTag.getInt("Z");
                     }
 
-                    // Varmistusmitat litematic-tiedostollesi (18x8x13)
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
                         sizeX = 18;
                         sizeY = 8;
@@ -252,7 +294,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     long[] blockStates = region.getLongArray("BlockStates");
 
                     if (palette.isEmpty() || blockStates.length == 0) {
-                        client.player.sendMessage(Text.literal("§cPalette or BlockStates empty!"), false);
                         continue;
                     }
 
@@ -269,7 +310,7 @@ public class AutobuilderClient implements ClientModInitializer {
 
                                     if (!blockName.equals("minecraft:air")) {
                                         BlockPos worldPos = playerPos.add(x, y, z);
-                                        buildQueue.add(new BlockData(worldPos, blockName));
+                                        tempQueue.add(new BlockData(worldPos, blockName));
                                     }
                                 }
                                 index++;
@@ -278,19 +319,24 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
+                // Järjestetään niin, että lähimmät palikat rakennetaan ensin!
+                tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
+                buildQueue.addAll(tempQueue);
+
                 if (!buildQueue.isEmpty()) {
                     isBuilding = true;
-                    client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
+                    waitingForAhConfirmation = false;
+                    client.player.sendMessage(Text.literal("§aRakennus aloitettu! Palikoita yhteensä: " + buildQueue.size()), false);
                 } else {
-                    client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
+                    client.player.sendMessage(Text.literal("§cEi rakennettavia palikoita löydynyt!"), false);
                 }
             } else {
-                client.player.sendMessage(Text.literal("§cInvalid litematic: No 'Regions' found!"), false);
+                client.player.sendMessage(Text.literal("§cVirheellinen litematic: 'Regions' puuttuu!"), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
+                client.player.sendMessage(Text.literal("§cVirhe luettaessa schematiciä: " + e.getMessage()), false);
             }
         }
     }
@@ -310,5 +356,49 @@ public class AutobuilderClient implements ClientModInitializer {
         }
 
         return (int) (value & ((1L << bitsPerEntry) - 1));
+    }
+
+    // Graafinen käyttöliittymä (Menu) asetusten säätöön
+    public static class AutobuilderMenuScreen extends Screen {
+        public AutobuilderMenuScreen() {
+            super(Text.literal("AutoBuilder Asetukset"));
+        }
+
+        @Override
+        protected void init() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            // Nopeuden säätö (Tick Delay)
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay), button -> {
+                AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
+                button.setMessage(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay));
+            }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
+
+            // Sulavuuden säätö (Smoothness)
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Sulavuus: " + AutobuilderClient.smoothness), button -> {
+                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 20.0f ? 4.0f : AutobuilderClient.smoothness + 4.0f;
+                button.setMessage(Text.literal("Sulavuus: " + AutobuilderClient.smoothness));
+            }).dimensions(centerX - 100, centerY, 200, 20).build());
+
+            // Sulje / Tallenna nappi
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Takaisin peliin"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(null);
+                }
+            }).dimensions(centerX - 100, centerY + 40, 200, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            this.renderBackground(context, mouseX, mouseY, delta);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 70, 0xFFFFFF);
+            super.render(context, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return true;
+        }
     }
 }
