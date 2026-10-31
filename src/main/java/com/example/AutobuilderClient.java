@@ -5,15 +5,20 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
+
+import java.io.File;
+import java.nio.file.Path;
 
 public class AutobuilderClient implements ClientModInitializer {
     private static KeyBinding buildKey;
 
     @Override
     public void onInitializeClient() {
-        // Rekisteröidään näppäin 1.21.4 yhteensopivalla tavalla
         buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.build",
                 InputUtil.Type.KEYSYM,
@@ -21,13 +26,42 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
-        // Kuunnellaan näppäimen painallusta pelin sisällä
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
-                if (client.player != null) {
-                    client.player.sendMessage(Text.literal("§aAutoBuilder-activated!"), false);
+                if (client.player != null && client.world != null) {
+                    client.player.sendMessage(Text.literal("§aAutoBuilder: Yritetään ladata litematic-tiedostoa..."), false);
+                    loadAndParseSchematic(client);
                 }
             }
         });
+    }
+
+    private void loadAndParseSchematic(net.minecraft.client.MinecraftClient client) {
+        try {
+            // Etsitään pelikansiosta schematics-kansio
+            File schematicsDir = new File(client.runDirectory, "schematics");
+            File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
+
+            if (files == null || files.length == 0) {
+                client.player.sendMessage(Text.literal("§cVirhe: Yhtään .litematic-tiedostoa ei löytynyt schematics-kansiosta!"), false);
+                return;
+            }
+
+            // Otetaan ensimmäinen vastaan tullut litematic-tiedosto
+            File schematicFile = files[0];
+            client.player.sendMessage(Text.literal("§eLöytyi tiedosto: " + schematicFile.getName()), false);
+
+            // Luetaan NBT-data turvallisesti
+            NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
+            
+            if (nbt != null) {
+                client.player.sendMessage(Text.literal("§aLitematic luettu onnistuneesti muistiin!"), false);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("§cVirhe litematic-tiedoston luvussa: " + e.getMessage()), false);
+            }
+        }
     }
 }
