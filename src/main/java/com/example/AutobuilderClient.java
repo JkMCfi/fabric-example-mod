@@ -231,30 +231,30 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
-                if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 1) {
+                if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 2) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
                 }
 
-                if (lastPlayerPos != null && client.player.getPos().squaredDistanceTo(lastPlayerPos) < 0.001) {
+                // Jumiutumisen ja spinnaamisen esto: peruutus, hyppy ja tieltä väistäminen
+                if (lastPlayerPos != null && client.player.getPos().squaredDistanceTo(lastPlayerPos) < 0.002) {
                     absoluteStuckCounter++;
                     if (absoluteStuckCounter > 15) {
                         absoluteStuckCounter = 0;
-                        int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
-                        if (dirtSlot != -1) {
-                            client.player.getInventory().selectedSlot = dirtSlot;
-                            BlockPos underPos = client.player.getBlockPos().down();
-                            if (client.world.getBlockState(underPos).isAir()) {
-                                client.world.setBlockState(underPos, Blocks.DIRT.getDefaultState());
-                                tempDirtPos = underPos;
-                            }
-                        }
                         if (client.options != null) {
+                            client.options.forwardKey.setPressed(false);
+                            client.options.backKey.setPressed(true);
                             client.options.jumpKey.setPressed(true);
+                        }
+                        if (!buildQueue.isEmpty()) {
+                            buildQueue.add(buildQueue.poll());
                         }
                     }
                 } else {
                     absoluteStuckCounter = 0;
+                    if (client.options != null) {
+                        client.options.backKey.setPressed(false);
+                    }
                 }
                 lastPlayerPos = client.player.getPos();
 
@@ -281,10 +281,16 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
+                // Tarkistus: Jos kohdassa on väärä palikka, rikotaan se pois ja asetetaan oikea tilalle
                 BlockState currentWorldState = client.world.getBlockState(blockData.pos);
                 if (!currentWorldState.isAir()) {
-                    buildQueue.poll();
-                    return;
+                    if (currentWorldState.getBlock() != targetBlock) {
+                        client.interactionManager.breakBlock(blockData.pos);
+                        return;
+                    } else {
+                        buildQueue.poll();
+                        return;
+                    }
                 }
 
                 if (!hasNeighborSupport(client, blockData.pos)) {
@@ -297,6 +303,17 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 smoothLookAt(client, targetVec);
 
+                // Lennossa alas tarvittaessa
+                if (client.player.getY() > blockData.pos.getY() + 1 && client.player.getAbilities().flying) {
+                    if (client.options != null) {
+                        client.options.sneakKey.setPressed(true);
+                    }
+                } else {
+                    if (client.options != null) {
+                        client.options.sneakKey.setPressed(false);
+                    }
+                }
+
                 BlockHitResult rayHit = client.world.raycast(new RaycastContext(
                         client.player.getEyePos(),
                         targetVec,
@@ -305,30 +322,17 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.player
                 ));
 
+                // Jos jokin edessä oleva este estää pääsyn/rakentamisen, rikotaan este tilapäisesti tieltä
                 if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
                     stuckTimer++;
                     if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (stuckTimer > 15) {
                         stuckTimer = 0;
-                        int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
-                        if (dirtSlot == -1) {
-                            if (client.player.getAbilities().creativeMode) {
-                                int slot = getFirstAvailableHotbarSlot(client);
-                                ItemStack blockStack = new ItemStack(Items.DIRT);
-                                client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
-                                client.player.getInventory().setStack(slot, blockStack);
-                            } else {
-                                client.player.sendMessage(Text.literal("§a[AutoBuilder] Stuck! Ordering /ah dirt automatically..."), false);
-                                client.player.networkHandler.sendChatCommand("ah dirt");
-                            }
-                        } else {
-                            client.player.getInventory().selectedSlot = dirtSlot;
-                            BlockPos underPos = client.player.getBlockPos().down();
-                            if (client.world.getBlockState(underPos).isAir()) {
-                                client.world.setBlockState(underPos, Blocks.DIRT.getDefaultState());
-                                tempDirtPos = underPos;
-                                if (client.options != null) client.options.jumpKey.setPressed(true);
-                            }
+                        BlockPos obstaclePos = rayHit.getBlockPos();
+                        // Tarkistetaan, ettei rikota liian tärkeitä tai tyhjiä blokkeja
+                        if (!client.world.getBlockState(obstaclePos).isAir()) {
+                            client.interactionManager.breakBlock(obstaclePos);
+                            client.player.sendMessage(Text.literal("§e[AutoBuilder] Clearing obstacle in the way..."), true);
                         }
                     }
                     return;
@@ -340,7 +344,7 @@ public class AutobuilderClient implements ClientModInitializer {
                         stuckTimer++;
                         if (client.options != null) client.options.jumpKey.setPressed(true);
 
-                        if (stuckTimer > 10 && tempDirtPos == null) {
+                        if (stuckTimer > 15 && tempDirtPos == null) {
                             int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
                             if (dirtSlot != -1) {
                                 client.player.getInventory().selectedSlot = dirtSlot;
@@ -352,7 +356,7 @@ public class AutobuilderClient implements ClientModInitializer {
                             }
                         }
 
-                        if (stuckTimer > 20 && client.options != null) {
+                        if (stuckTimer > 25 && client.options != null) {
                             client.options.leftKey.setPressed(true);
                         }
                     } else {
@@ -423,6 +427,7 @@ public class AutobuilderClient implements ClientModInitializer {
             client.options.jumpKey.setPressed(false);
             client.options.leftKey.setPressed(false);
             client.options.rightKey.setPressed(false);
+            client.options.sneakKey.setPressed(false);
         }
     }
 
@@ -578,7 +583,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // TÄRKEÄMUUTOS: Järjestetään ensin redstone viimeiseksi, sitten alhaalta ylöspäin (Y-koordinaatti) ja vasta sitten etäisyyden mukaan
                 tempQueue.sort((b1, b2) -> {
                     boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator") || b1.blockName.contains("chest");
                     boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator") || b2.blockName.contains("chest");
@@ -586,7 +590,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (isRedstone1 && !isRedstone2) return 1;
                     if (!isRedstone1 && isRedstone2) return -1;
 
-                    // Kerros kerrokselta alhaalta ylös (Lattia ensin!)
                     int yCompare = Integer.compare(b1.pos.getY(), b2.pos.getY());
                     if (yCompare != 0) {
                         return yCompare;
@@ -604,7 +607,7 @@ public class AutobuilderClient implements ClientModInitializer {
                     isPaused = false;
                     waitingForAhConfirmation = false;
                     if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§aBuilding started (Floor first)! Total blocks: " + buildQueue.size()), false);
+                        client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
                     }
                 }
             }
