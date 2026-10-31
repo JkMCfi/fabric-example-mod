@@ -1,59 +1,30 @@
-plugins {
-    id 'fabric-loom' version '1.14.0'
-    id 'maven-publish'
-}
+name: build
+on: [pull_request, push]
 
-version = project.mod_version
-group = project.maven_group
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
 
-base {
-    archivesName = project.archives_base_name
-}
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
-repositories {
-    mavenCentral()
-    maven {
-        name = 'Fabric'
-        url = 'https://maven.fabricmc.net/'
-    }
-    maven {
-        name = 'CurseMaven'
-        url = 'https://cursemaven.com'
-    }
-}
+      - name: setup jdk
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
 
-    // Use this if the exact Fabric API is resolvable from Fabric Maven:
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+      - name: build
+        run: ./gradlew clean build
 
-    // If it does not resolve, use:
-    // modImplementation "curse.maven:fabric-api-306612:8525513"
-}
-
-processResources {
-    inputs.property "version", project.version
-
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    it.options.release = 17
-}
-
-java {
-    withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
-
-jar {
-    from("LICENSE") {
-        rename { "${it}_${project.archives_base_name}" }
-    }
-}
+      - name: capture build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Artifacts
+          path: build/libs/
