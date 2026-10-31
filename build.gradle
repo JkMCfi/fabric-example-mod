@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.7.1'
+    id 'fabric-loom' version '1.14.0'
     id 'maven-publish'
 }
 
@@ -16,13 +16,22 @@ repositories {
         name = 'Fabric'
         url = 'https://maven.fabricmc.net/'
     }
+    maven {
+        name = 'CurseMaven'
+        url = 'https://cursemaven.com'
+    }
 }
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // If this exact Fabric API version is available in your repo:
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // If exact 0.141.6+1.21.11 is not in Fabric Maven yet, use CurseMaven:
+    // modImplementation "curse.maven:fabric-api-306612:8525513"
 }
 
 processResources {
