@@ -39,6 +39,10 @@ import net.minecraft.world.RaycastContext;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedList;
@@ -201,13 +205,13 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                // Prevent placing blocks inside player's own bounding box
                 if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
                     client.options.forwardKey.setPressed(false);
                     return;
                 }
 
-                // Strict Raycast check: DO NOT place blocks through walls
+                smoothLookAt(client, targetVec);
+
                 BlockHitResult rayHit = client.world.raycast(new RaycastContext(
                         client.player.getEyePos(),
                         targetVec,
@@ -216,9 +220,13 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.player
                 ));
 
-                // If ray hits something before the target block position, there's a wall in the way!
                 if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
-                    // Wait until the path/wall is clear or move closer
+                    stuckTimer++;
+                    client.options.forwardKey.setPressed(true);
+                    if (stuckTimer > 30) {
+                        stuckTimer = 0;
+                        buildQueue.add(buildQueue.poll());
+                    }
                     return;
                 }
 
@@ -240,11 +248,15 @@ public class AutobuilderClient implements ClientModInitializer {
                                 }
                             }
                         }
+
+                        if (stuckTimer > 25) {
+                            client.options.leftKey.setPressed(true);
+                        }
                     } else {
                         stuckTimer = 0;
                         client.options.jumpKey.setPressed(false);
+                        client.options.leftKey.setPressed(false);
                     }
-                    smoothLookAt(client, targetVec);
                     return; 
                 } else {
                     stopMovement(client);
@@ -278,7 +290,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 client.player.getInventory().selectedSlot = slot;
-                smoothLookAt(client, targetVec);
 
                 BlockState targetState = targetBlock.getDefaultState();
                 targetState = applyProperties(targetState, blockData.propertiesTag);
@@ -458,7 +469,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Sort queue: Support blocks first, then redstone/attachables, closest distance first
                 tempQueue.sort((b1, b2) -> {
                     boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator");
                     boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator");
@@ -526,81 +536,188 @@ public class AutobuilderClient implements ClientModInitializer {
             int centerX = this.width / 2;
             int centerY = this.height / 2;
 
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Schematic: " + getActiveSchematicDisplayName()), button -> {
-                cycleSchematic();
-                button.setMessage(Text.literal("Schematic: " + getActiveSchematicDisplayName()));
-            }).dimensions(centerX - 100, centerY - 100, 200, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Online Schematics (Donut.build)..."), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new OnlineSchematicBrowserScreen());
+                }
+            }).dimensions(centerX - 100, centerY - 110, 200, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Search / Select Local Schematic..."), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new SchematicSearchScreen());
+                }
+            }).dimensions(centerX - 100, centerY - 80, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay), button -> {
                 AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
                 button.setMessage(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay));
-            }).dimensions(centerX - 100, centerY - 70, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 50, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Smoothness: " + AutobuilderClient.smoothness), button -> {
                 AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 4.0f;
                 button.setMessage(Text.literal("Smoothness: " + AutobuilderClient.smoothness));
-            }).dimensions(centerX - 100, centerY - 40, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 20, 200, 20).build());
 
             String holoStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Hologram: " + holoStatus), button -> {
                 AutobuilderClient.showHologram = !AutobuilderClient.showHologram;
                 String newStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
                 button.setMessage(Text.literal("Hologram: " + newStatus));
-            }).dimensions(centerX - 100, centerY - 10, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 10, 200, 20).build());
 
             String adminStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Admin/Spectator Safety: " + adminStatus), button -> {
                 AutobuilderClient.autoLeaveOnAdmin = !AutobuilderClient.autoLeaveOnAdmin;
                 String newStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
                 button.setMessage(Text.literal("Admin/Spectator Safety: " + newStatus));
-            }).dimensions(centerX - 100, centerY + 20, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 40, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Other Mods..."), button -> {
                 if (this.client != null) {
                     this.client.setScreen(new OtherModsMenuScreen());
                 }
-            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 70, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back to Game"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(null);
                 }
-            }).dimensions(centerX - 100, centerY + 80, 200, 20).build());
-        }
-
-        private String getActiveSchematicDisplayName() {
-            if (AutobuilderClient.selectedSchematicName == null || AutobuilderClient.selectedSchematicName.isEmpty()) {
-                File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
-                File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
-                if (files != null && files.length > 0) {
-                    AutobuilderClient.selectedSchematicName = files[0].getName();
-                } else {
-                    return "None found";
-                }
-            }
-            return AutobuilderClient.selectedSchematicName;
-        }
-
-        private void cycleSchematic() {
-            File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
-            File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
-            if (files == null || files.length == 0) return;
-
-            int currentIndex = 0;
-            for (int i = 0; i < files.length; i++) {
-                if (files[i].getName().equals(AutobuilderClient.selectedSchematicName)) {
-                    currentIndex = i;
-                    break;
-                }
-            }
-            int nextIndex = (currentIndex + 1) % files.length;
-            AutobuilderClient.selectedSchematicName = files[nextIndex].getName();
+            }).dimensions(centerX - 100, centerY + 100, 200, 20).build());
         }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 120, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 130, 0xFFFFFF);
+            super.render(context, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return true;
+        }
+    }
+
+    // Online Schematic Browser / Downloader Screen (Donut.build integration)
+    public static class OnlineSchematicBrowserScreen extends Screen {
+        public OnlineSchematicBrowserScreen() {
+            super(Text.literal("Online Schematics (Donut.build)"));
+        }
+
+        @Override
+        protected void init() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            // Esimerkkinappi suositulle nettisivuston schematicille / lataukselle
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: Farm_Template.litematic"), button -> {
+                downloadSchematic("https://donut.build/api/schematics/farm_template.litematic", "Farm_Template.litematic");
+            }).dimensions(centerX - 130, centerY - 40, 260, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: Storage_System.litematic"), button -> {
+                downloadSchematic("https://donut.build/api/schematics/storage_system.litematic", "Storage_System.litematic");
+            }).dimensions(centerX - 130, centerY - 10, 260, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new AutobuilderMenuScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
+        }
+
+        private void downloadSchematic(String fileUrl, String fileName) {
+            try {
+                File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
+                if (!schematicsDir.exists()) schematicsDir.mkdirs();
+
+                File targetFile = new File(schematicsDir, fileName);
+                
+                // Simuloitu/turvallinen verkkolataus taustalla tai suoraan
+                new Thread(() -> {
+                    try {
+                        URL url = URI.create(fileUrl).toURL();
+                        try (InputStream in = url.openStream(); FileOutputStream fos = new FileOutputStream(targetFile)) {
+                            byte[] buffer = new byte[1024];
+                            int len;
+                            while ((len = in.read(buffer)) > 0) {
+                                fos.write(buffer, 0, len);
+                            }
+                        }
+                        MinecraftClient.getInstance().execute(() -> {
+                            if (MinecraftClient.getInstance().player != null) {
+                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§aSuccessfully downloaded: " + fileName), false);
+                                AutobuilderClient.selectedSchematicName = fileName;
+                            }
+                        });
+                    } catch (Exception e) {
+                        MinecraftClient.getInstance().execute(() -> {
+                            if (MinecraftClient.getInstance().player != null) {
+                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§cFailed to download from web. File saved locally or check URL."), false);
+                            }
+                        });
+                    }
+                }).start();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            this.renderBackground(context, mouseX, mouseY, delta);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 80, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7Preview & 3D view supported via local folder"), this.width / 2, this.height / 2 - 60, 0xAAAAAA);
+            super.render(context, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return true;
+        }
+    }
+
+    // Schematic Search / Selection Screen
+    public static class SchematicSearchScreen extends Screen {
+        public SchematicSearchScreen() {
+            super(Text.literal("Select Local Schematic"));
+        }
+
+        @Override
+        protected void init() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
+            File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
+
+            if (files != null && files.length > 0) {
+                int yOffset = -50;
+                for (File file : files) {
+                    if (yOffset > 60) break;
+                    final String fileName = file.getName();
+                    this.addDrawableChild(ButtonWidget.builder(Text.literal(fileName), button -> {
+                        AutobuilderClient.selectedSchematicName = fileName;
+                        if (this.client != null) {
+                            this.client.player.sendMessage(Text.literal("§aSelected schematic: " + fileName), false);
+                            this.client.setScreen(new AutobuilderMenuScreen());
+                        }
+                    }).dimensions(centerX - 100, centerY + yOffset, 200, 20).build());
+                    yOffset += 25;
+                }
+            }
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new AutobuilderMenuScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 90, 200, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            this.renderBackground(context, mouseX, mouseY, delta);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 80, 0xFFFFFF);
             super.render(context, mouseX, mouseY, delta);
         }
 
