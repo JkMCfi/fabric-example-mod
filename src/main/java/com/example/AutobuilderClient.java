@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -19,13 +20,11 @@ import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.registry.Registries;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
@@ -44,18 +43,20 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean isBuilding = false;
     private static boolean waitingForAhConfirmation = false;
     
-    // Säädettävät arvot (muokattavissa myös menusta)
-    public static int tickDelay = 3; // Oletuksena hieman hitaampi
-    public static float smoothness = 8.0f; // Erittäin sulava katseen kääntö
+    // Säädettävät arvot menusta
+    public static int tickDelay = 3; // Hitaampi ja rauhallisempi tahti
+    public static float smoothness = 8.0f; // Pehmeä katseen kääntö
     private static int tickCounter = 0;
 
     private static class BlockData {
         final BlockPos pos;
         final String blockName;
+        final NbtCompound propertiesTag;
 
-        BlockData(BlockPos pos, String blockName) {
+        BlockData(BlockPos pos, String blockName, NbtCompound propertiesTag) {
             this.pos = pos;
             this.blockName = blockName;
+            this.propertiesTag = propertiesTag;
         }
     }
 
@@ -143,7 +144,6 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.player.getInventory().setStack(slot, blockStack);
                         client.player.sendMessage(Text.literal("§7Haettu (Creative): " + blockData.blockName), true);
                     } else {
-                        // Survival & /ah hintavahti (>200k osto vaatii vahvistuksen)
                         isBuilding = false;
                         client.options.forwardKey.setPressed(false);
                         client.options.jumpKey.setPressed(false);
@@ -162,7 +162,7 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 smoothLookAt(client, targetVec);
 
-                // Anti-stuck: hypätään automaattisesti jos jää jumiin
+                // Anti-stuck: hypätään jos hahmo jää jumiin rakenteiden väliin
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
                     
@@ -179,30 +179,33 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 buildQueue.poll();
 
-                BlockPos supportPos = blockData.pos.down();
-                BlockHitResult hitResult = new BlockHitResult(
-                        Vec3d.ofCenter(supportPos),
-                        Direction.UP,
-                        supportPos,
-                        false
-                );
+                // Luodaan tarkka BlockState litematicin ominaisuuksilla (suunta, portaat, arkut, dispenserit jne.)
+                BlockState targetState = block.getDefaultState();
+                targetState = applyProperties(targetState, blockData.propertiesTag);
 
-                ActionResult result = client.interactionManager.interactBlock(
-                        client.player,
-                        Hand.MAIN_HAND,
-                        hitResult
-                );
-
+                // Asetetaan palikka suoraan maailmaan oikeassa asennossa
+                client.world.setBlockState(blockData.pos, targetState);
                 client.player.swingHand(Hand.MAIN_HAND);
-
-                if (result.isAccepted()) {
-                    client.player.sendMessage(Text.literal("§7Asetettu: " + blockData.blockName), true);
-                } else {
-                    client.world.setBlockState(blockData.pos, block.getDefaultState());
-                    client.player.sendMessage(Text.literal("§7Pakkoasetettu: " + blockData.blockName), true);
-                }
+                client.player.sendMessage(Text.literal("§7Asetettu: " + blockData.blockName), true);
             }
         });
+    }
+
+    private BlockState applyProperties(BlockState state, NbtCompound propertiesTag) {
+        if (propertiesTag == null) return state;
+        for (String key : propertiesTag.getKeys()) {
+            Property<?> property = state.getBlock().getStateManager().getProperty(key);
+            if (property != null) {
+                String valStr = propertiesTag.getString(key);
+                for (Object valObj : property.getValues()) {
+                    if (valObj.toString().equalsIgnoreCase(valStr)) {
+                        state = state.with((Property) property, (Comparable) valObj);
+                        break;
+                    }
+                }
+            }
+        }
+        return state;
     }
 
     private void smoothLookAt(MinecraftClient client, Vec3d target) {
@@ -305,12 +308,13 @@ public class AutobuilderClient implements ClientModInitializer {
                             for (int x = 0; x < sizeX; x++) {
                                 int paletteIndex = getPaletteIndex(blockStates, index, minBits);
                                 if (paletteIndex >= 0 && paletteIndex < palette.size()) {
-                                    NbtCompound blockState = palette.getCompound(paletteIndex);
-                                    String blockName = blockState.getString("Name");
+                                    NbtCompound blockStateTag = palette.getCompound(paletteIndex);
+                                    String blockName = blockStateTag.getString("Name");
+                                    NbtCompound propertiesTag = blockStateTag.contains("Properties") ? blockStateTag.getCompound("Properties") : null;
 
                                     if (!blockName.equals("minecraft:air")) {
                                         BlockPos worldPos = playerPos.add(x, y, z);
-                                        tempQueue.add(new BlockData(worldPos, blockName));
+                                        tempQueue.add(new BlockData(worldPos, blockName, propertiesTag));
                                     }
                                 }
                                 index++;
@@ -319,7 +323,7 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Järjestetään niin, että lähimmät palikat rakennetaan ensin!
+                // Järjestetään niin, että hahmo rakentaa aina lähimmästä pisteestä alkaen!
                 tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
                 buildQueue.addAll(tempQueue);
 
@@ -358,7 +362,7 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
-    // Graafinen käyttöliittymä (Menu) asetusten säätöön
+    // Asetusmenu (Avautuu painamalla M-kirjainta)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
             super(Text.literal("AutoBuilder Asetukset"));
@@ -369,19 +373,16 @@ public class AutobuilderClient implements ClientModInitializer {
             int centerX = this.width / 2;
             int centerY = this.height / 2;
 
-            // Nopeuden säätö (Tick Delay)
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay), button -> {
                 AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
                 button.setMessage(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay));
             }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
 
-            // Sulavuuden säätö (Smoothness)
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Sulavuus: " + AutobuilderClient.smoothness), button -> {
                 AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 20.0f ? 4.0f : AutobuilderClient.smoothness + 4.0f;
                 button.setMessage(Text.literal("Sulavuus: " + AutobuilderClient.smoothness));
             }).dimensions(centerX - 100, centerY, 200, 20).build());
 
-            // Sulje / Tallenna nappi
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Takaisin peliin"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(null);
