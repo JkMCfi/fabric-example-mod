@@ -3,6 +3,7 @@ package com.example;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -27,11 +28,14 @@ import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
+import net.minecraft.world.RaycastContext;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -93,6 +97,13 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
+        WorldRenderEvents.LAST.register(context -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null) {
+                // Hologram rendering placeholder
+            }
+        });
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (menuKey.wasPressed()) {
                 if (client.player != null) {
@@ -108,7 +119,6 @@ public class AutobuilderClient implements ClientModInitializer {
                         for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
                             if (entry.getProfile().getId().equals(client.player.getGameProfile().getId())) continue;
                             
-                            // Korjattu pelitilan tarkistus
                             if (entry.getGameMode() == GameMode.SPECTATOR) {
                                 isBuilding = false;
                                 isPaused = false;
@@ -191,9 +201,24 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
+                // Prevent placing blocks inside player's own bounding box
                 if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
-                    client.options.forwardKey.setPressed(true);
-                    client.options.jumpKey.setPressed(true);
+                    client.options.forwardKey.setPressed(false);
+                    return;
+                }
+
+                // Strict Raycast check: DO NOT place blocks through walls
+                BlockHitResult rayHit = client.world.raycast(new RaycastContext(
+                        client.player.getEyePos(),
+                        targetVec,
+                        RaycastContext.ShapeType.COLLIDER,
+                        RaycastContext.FluidHandling.NONE,
+                        client.player
+                ));
+
+                // If ray hits something before the target block position, there's a wall in the way!
+                if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
+                    // Wait until the path/wall is clear or move closer
                     return;
                 }
 
@@ -215,14 +240,9 @@ public class AutobuilderClient implements ClientModInitializer {
                                 }
                             }
                         }
-
-                        if (stuckTimer > 25) {
-                            client.options.leftKey.setPressed(true);
-                        }
                     } else {
                         stuckTimer = 0;
                         client.options.jumpKey.setPressed(false);
-                        client.options.leftKey.setPressed(false);
                     }
                     smoothLookAt(client, targetVec);
                     return; 
@@ -438,7 +458,19 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
+                // Sort queue: Support blocks first, then redstone/attachables, closest distance first
+                tempQueue.sort((b1, b2) -> {
+                    boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator");
+                    boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator");
+                    
+                    if (isRedstone1 && !isRedstone2) return 1;
+                    if (!isRedstone1 && isRedstone2) return -1;
+
+                    double dist1 = client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b1.pos));
+                    double dist2 = client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b2.pos));
+                    return Double.compare(dist1, dist2);
+                });
+
                 buildQueue.addAll(tempQueue);
 
                 if (!buildQueue.isEmpty()) {
