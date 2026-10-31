@@ -7,6 +7,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
@@ -18,8 +19,19 @@ import java.util.Queue;
 
 public class AutobuilderClient implements ClientModInitializer {
     private static KeyBinding buildKey;
-    private static final Queue<BlockPos> buildQueue = new LinkedList<>();
+    private static final Queue<BlockData> buildQueue = new LinkedList<>();
     private static boolean isBuilding = false;
+
+    // Apuluokka lohkotiedolle
+    private static class BlockData {
+        final BlockPos pos;
+        final String blockName;
+
+        BlockData(BlockPos pos, String blockName) {
+            this.pos = pos;
+            this.blockName = blockName;
+        }
+    }
 
     @Override
     public void onInitializeClient() {
@@ -30,7 +42,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
-        // Tick-tapahtuma joka ajaa rakennusjonoa eteenpäin pelin pyöriessä
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
@@ -39,14 +50,12 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
             }
 
-            // Jos rakennus on käynnissä, asetetaan muutama palikka per tick
             if (isBuilding && client.player != null && client.world != null) {
                 for (int i = 0; i < 5 && !buildQueue.isEmpty(); i++) {
-                    BlockPos pos = buildQueue.poll();
+                    BlockData blockData = buildQueue.poll();
                     
-                    // Tässä kohtaa lähetetään palikan sijoituspyyntö tai simuloidaan
-                    // Esimerkiksi tulostetaan chattiin koordinaatti testiksi:
-                    client.player.sendMessage(Text.literal("§7Building block at: " + pos.toShortString()), true);
+                    // Tulostetaan chattiin mitä palikkaa ollaan rakentamassa mihinkin koordinaattiin
+                    client.player.sendMessage(Text.literal("§7Placing " + blockData.blockName + " at " + blockData.pos.toShortString()), true);
                 }
 
                 if (buildQueue.isEmpty()) {
@@ -74,8 +83,6 @@ public class AutobuilderClient implements ClientModInitializer {
             
             if (nbt != null && nbt.contains("Regions")) {
                 NbtCompound regions = nbt.getCompound("Regions");
-                client.player.sendMessage(Text.literal("§aRegions found in schematic!"), false);
-                
                 buildQueue.clear();
                 BlockPos playerPos = client.player.getBlockPos();
 
@@ -85,25 +92,8 @@ public class AutobuilderClient implements ClientModInitializer {
                     int sizeX = region.getCompound("Size").getInt("x");
                     int sizeY = region.getCompound("Size").getInt("y");
                     int sizeZ = region.getCompound("Size").getInt("z");
-                    
-                    // Täytetään jono esimerkkikoordinaateilla pelaajan ympärille
-                    for (int x = 0; x < Math.min(sizeX, 10); x++) {
-                        for (int y = 0; y < Math.min(sizeY, 5); y++) {
-                            for (int z = 0; z < Math.min(sizeZ, 10); z++) {
-                                buildQueue.add(playerPos.add(x, y, z));
-                            }
-                        }
-                    }
-                }
 
-                isBuilding = true;
-                client.player.sendMessage(Text.literal("§aBuilding started! Queue size: " + buildQueue.size()), false);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            if (client.player != null) {
-                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
-            }
-        }
-    }
-}
+                    NbtList palette = region.getList("Palette", 10);
+                    long[] blockStates = region.getLongArray("BlockStates");
+
+                    int minBits = Math.max(2, 32 - Integer.numberOf
