@@ -14,7 +14,7 @@ public class AutobuilderClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         // Rekisteröidään näppäin 1.21.4 yhteensopivalla tavalla
-        buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.build",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_N,
