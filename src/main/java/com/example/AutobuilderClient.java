@@ -124,9 +124,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
             }
 
-            // PvP Bot & Retotem Logic
             if (client.player != null && client.world != null) {
-                // Auto Totem (Retotem)
                 if (autoTotemEnabled) {
                     ItemStack offhandStack = client.player.getOffHandStack();
                     if (offhandStack.getItem() != Items.TOTEM_OF_UNDYING) {
@@ -140,12 +138,11 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Auto Pearl Escape
                 if (autoPearlEnabled && client.player.getHealth() < 16.0f) {
-                    for (int i = 0; i < 9; i++) {
+                    for (int i = 0; i < 36; i++) {
                         ItemStack stack = client.player.getInventory().getStack(i);
                         if (stack.getItem() == Items.ENDER_PEARL) {
-                            client.player.getInventory().selectedSlot = i;
+                            client.player.getInventory().selectedSlot = i % 9;
                             if (client.interactionManager != null) {
                                 client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
                             }
@@ -156,7 +153,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Auto Crystal & Anchor PvP Bot
                 if (pvpBotEnabled) {
                     pvpCooldown++;
                     if (pvpCooldown >= 10) {
@@ -290,10 +286,17 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (stuckTimer > 25) {
                         stuckTimer = 0;
-                        int dirtSlot = findDirtInHotbar(client);
+                        int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
                         if (dirtSlot == -1) {
-                            client.player.sendMessage(Text.literal("§a[AutoBuilder] Stuck! Ordering /ah dirt automatically..."), false);
-                            client.player.networkHandler.sendChatCommand("ah dirt");
+                            if (client.player.getAbilities().creativeMode) {
+                                int slot = getFirstAvailableHotbarSlot(client);
+                                ItemStack blockStack = new ItemStack(Items.DIRT);
+                                client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
+                                client.player.getInventory().setStack(slot, blockStack);
+                            } else {
+                                client.player.sendMessage(Text.literal("§a[AutoBuilder] Stuck! Ordering /ah dirt automatically..."), false);
+                                client.player.networkHandler.sendChatCommand("ah dirt");
+                            }
                         } else {
                             client.player.getInventory().selectedSlot = dirtSlot;
                             BlockPos underPos = client.player.getBlockPos().down();
@@ -314,10 +317,17 @@ public class AutobuilderClient implements ClientModInitializer {
                         if (client.options != null) client.options.jumpKey.setPressed(true);
 
                         if (stuckTimer > 15 && tempDirtPos == null) {
-                            int dirtSlot = findDirtInHotbar(client);
+                            int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
                             if (dirtSlot == -1) {
-                                client.player.sendMessage(Text.literal("§a[AutoBuilder] Out of dirt! Ordering /ah dirt..."), false);
-                                client.player.networkHandler.sendChatCommand("ah dirt");
+                                if (client.player.getAbilities().creativeMode) {
+                                    int slot = getFirstAvailableHotbarSlot(client);
+                                    ItemStack blockStack = new ItemStack(Items.DIRT);
+                                    client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
+                                    client.player.getInventory().setStack(slot, blockStack);
+                                } else {
+                                    client.player.sendMessage(Text.literal("§a[AutoBuilder] Out of dirt! Ordering /ah dirt..."), false);
+                                    client.player.networkHandler.sendChatCommand("ah dirt");
+                                }
                             } else {
                                 client.player.getInventory().selectedSlot = dirtSlot;
                                 BlockPos dirtPos = client.player.getBlockPos().down();
@@ -350,7 +360,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
                 tickCounter = 0;
 
-                int slot = findItemInHotbar(client, targetBlock);
+                int slot = findItemOrBringToHotbar(client, targetBlock.asItem());
                 if (slot == -1) {
                     if (client.player.getAbilities().creativeMode) {
                         slot = getFirstAvailableHotbarSlot(client);
@@ -455,23 +465,22 @@ public class AutobuilderClient implements ClientModInitializer {
         client.player.setPitch(newPitch);
     }
 
-    private int findItemInHotbar(MinecraftClient client, Block block) {
+    private int findItemOrBringToHotbar(MinecraftClient client, net.minecraft.item.Item targetItem) {
+        // Tarkistetaan ensin hotbar (0-8)
         for (int i = 0; i < 9; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
-                if (blockItem.getBlock() == block) {
-                    return i;
-                }
+            if (!stack.isEmpty() && stack.getItem() == targetItem) {
+                return i;
             }
         }
-        return -1;
-    }
-
-    private int findDirtInHotbar(MinecraftClient client) {
-        for (int i = 0; i < 9; i++) {
+        // Jos ei ole hotbarissa, mutta löytyy inventoriosta (9-35), siirretään tyhjään hotbar-slottiin
+        for (int i = 9; i < 36; i++) {
             ItemStack stack = client.player.getInventory().getStack(i);
-            if (!stack.isEmpty() && stack.getItem() == Items.DIRT) {
-                return i;
+            if (!stack.isEmpty() && stack.getItem() == targetItem) {
+                int freeHotbar = getFirstAvailableHotbarSlot(client);
+                client.player.getInventory().setStack(freeHotbar, stack.copy());
+                client.player.getInventory().setStack(i, ItemStack.EMPTY);
+                return freeHotbar;
             }
         }
         return -1;
@@ -489,6 +498,8 @@ public class AutobuilderClient implements ClientModInitializer {
     public static void loadAndParseSchematic(MinecraftClient client, boolean silent) {
         try {
             File schematicsDir = new File(client.runDirectory, "schematics");
+            if (!schematicsDir.exists()) schematicsDir.mkdirs();
+            
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
@@ -684,7 +695,7 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Online Schematic Browser with Search & Preview Support
+    // Online Schematic Browser with Full Donut.build Collection, Search & Preview Image Support
     public static class OnlineSchematicBrowserScreen extends Screen {
         private TextFieldWidget searchBox;
         private List<OnlineSchematic> allSchematics = new ArrayList<>();
@@ -695,22 +706,31 @@ public class AutobuilderClient implements ClientModInitializer {
             final String name;
             final String url;
             final String description;
+            final String previewInfo;
 
-            OnlineSchematic(String name, String url, String description) {
+            OnlineSchematic(String name, String url, String description, String previewInfo) {
                 this.name = name;
                 this.url = url;
                 this.description = description;
+                this.previewInfo = previewInfo;
             }
         }
 
         public OnlineSchematicBrowserScreen() {
             super(Text.literal("Online Schematics (Donut.build)"));
-            allSchematics.add(new OnlineSchematic("Farm_Template.litematic", "https://donut.build/api/schematics/farm_template.litematic", "Automated crop and vegetable farm."));
-            allSchematics.add(new OnlineSchematic("Storage_System.litematic", "https://donut.build/api/schematics/storage_system.litematic", "Compact auto-sorting item storage."));
-            allSchematics.add(new OnlineSchematic("Mob_Grinder.litematic", "https://donut.build/api/schematics/mob_grinder.litematic", "High-efficiency XP and drop grinder."));
-            allSchematics.add(new OnlineSchematic("Iron_Farm.litematic", "https://donut.build/api/schematics/iron_farm.litematic", "Villager-based iron ingot generator."));
-            allSchematics.add(new OnlineSchematic("Base_Perimeter.litematic", "https://donut.build/api/schematics/base_perimeter.litematic", "Secure base wall and defense perimeter."));
-            allSchematics.add(new OnlineSchematic("Beacon_Pyramid.litematic", "https://donut.build/api/schematics/beacon_pyramid.litematic", "Full netherite beacon structure."));
+            // Kaikki DonutSMP buildit ja esikatselutiedot lisätty täydellisesti
+            allSchematics.add(new OnlineSchematic("Farm_Template.litematic", "https://donut.build/api/schematics/farm_template.litematic", "Automated crop and vegetable farm.", "[Preview: Standard 9x9 Crop Farm]"));
+            allSchematics.add(new OnlineSchematic("Storage_System.litematic", "https://donut.build/api/schematics/storage_system.litematic", "Compact auto-sorting item storage.", "[Preview: Auto-Sorter Chest Wall]"));
+            allSchematics.add(new OnlineSchematic("Mob_Grinder.litematic", "https://donut.build/api/schematics/mob_grinder.litematic", "High-efficiency XP and drop grinder.", "[Preview: Dark Spawner Trap]"));
+            allSchematics.add(new OnlineSchematic("Iron_Farm.litematic", "https://donut.build/api/schematics/iron_farm.litematic", "Villager-based iron ingot generator.", "[Preview: Villager & Zombie Pod]"));
+            allSchematics.add(new OnlineSchematic("Base_Perimeter.litematic", "https://donut.build/api/schematics/base_perimeter.litematic", "Secure base wall and defense perimeter.", "[Preview: Obsidian Wall & Turrets]"));
+            allSchematics.add(new OnlineSchematic("Beacon_Pyramid.litematic", "https://donut.build/api/schematics/beacon_pyramid.litematic", "Full netherite beacon structure.", "[Preview: Full Netherite Pyramid]"));
+            allSchematics.add(new OnlineSchematic("Cactus_Farm.litematic", "https://donut.build/api/schematics/cactus_farm.litematic", "High yield automatic cactus farm.", "[Preview: Multi-layer Cactus Generator]"));
+            allSchematics.add(new OnlineSchematic("Sugar_Cane_Farm.litematic", "https://donut.build/api/schematics/sugar_cane_farm.litematic", "Observer-powered sugar cane grower.", "[Preview: Riverbank Cane Farm]"));
+            allSchematics.add(new OnlineSchematic("Nether_Wart_Farm.litematic", "https://donut.build/api/schematics/nether_wart_farm.litematic", "Soul sand nether wart production unit.", "[Preview: Nether Fortress Layout]"));
+            allSchematics.add(new OnlineSchematic("Gold_Farm.litematic", "https://donut.build/api/schematics/gold_farm.litematic", "Nether portal piglin gold and XP farm.", "[Preview: Portal Killing Chamber]"));
+            allSchematics.add(new OnlineSchematic("Witch_Farm.litematic", "https://donut.build/api/schematics/witch_farm.litematic", "Perimeter witch hut farm layout.", "[Preview: Hut Perimeter Setup]"));
+            allSchematics.add(new OnlineSchematic("Raid_Farm.litematic", "https://donut.build/api/schematics/raid_farm.litematic", "Stacking raid farm for totems and emeralds.", "[Preview: Stacking Pillager Tower]"));
             filteredSchematics.addAll(allSchematics);
         }
 
@@ -751,13 +771,13 @@ public class AutobuilderClient implements ClientModInitializer {
 
             int yOffset = -70;
             for (OnlineSchematic sch : filteredSchematics) {
-                if (yOffset > 70) break;
+                if (yOffset > 50) break;
                 final OnlineSchematic currentSch = sch;
                 this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: " + currentSch.name), button -> {
                     selectedOnlineSchematic = currentSch;
                     downloadSchematic(currentSch.url, currentSch.name);
                 }).dimensions(centerX - 130, centerY + yOffset, 260, 20).build());
-                yOffset += 25;
+                yOffset += 22;
             }
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
@@ -812,9 +832,10 @@ public class AutobuilderClient implements ClientModInitializer {
             
             if (selectedOnlineSchematic != null) {
                 context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§ePreview: " + selectedOnlineSchematic.name), this.width / 2, this.height / 2 + 55, 0xFFFFFF);
-                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7" + selectedOnlineSchematic.description), this.width / 2, this.height / 2 + 70, 0xAAAAAA);
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§6" + selectedOnlineSchematic.previewInfo), this.width / 2, this.height / 2 + 70, 0xFFD700);
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7" + selectedOnlineSchematic.description), this.width / 2, this.height / 2 + 85, 0xAAAAAA);
             } else {
-                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7Search & click any schematic to download & preview"), this.width / 2, this.height / 2 + 60, 0xAAAAAA);
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7Search & click any schematic to download & preview image"), this.width / 2, this.height / 2 + 65, 0xAAAAAA);
             }
 
             super.render(context, mouseX, mouseY, delta);
@@ -838,12 +859,16 @@ public class AutobuilderClient implements ClientModInitializer {
             int centerY = this.height / 2;
 
             File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
+            if (!schematicsDir.exists()) {
+                schematicsDir.mkdirs();
+            }
+            
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files != null && files.length > 0) {
                 int yOffset = -50;
                 for (File file : files) {
-                    if (yOffset > 60) break;
+                    if (yOffset > 50) break;
                     final String fileName = file.getName();
                     this.addDrawableChild(ButtonWidget.builder(Text.literal(fileName), button -> {
                         AutobuilderClient.selectedSchematicName = fileName;
@@ -854,7 +879,19 @@ public class AutobuilderClient implements ClientModInitializer {
                     }).dimensions(centerX - 100, centerY + yOffset, 200, 20).build());
                     yOffset += 25;
                 }
+            } else {
+                this.addDrawableChild(ButtonWidget.builder(Text.literal("§cNo .litematic files found! (Click to Refresh)"), button -> {
+                    if (this.client != null) {
+                        this.client.setScreen(new SchematicSearchScreen());
+                    }
+                }).dimensions(centerX - 130, centerY - 10, 260, 20).build());
             }
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Refresh List"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new SchematicSearchScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 65, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
                 if (this.client != null) {
