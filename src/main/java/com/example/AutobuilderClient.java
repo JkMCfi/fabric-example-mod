@@ -22,6 +22,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
@@ -96,58 +97,57 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
+                // Vaihdetaan esine käteen aktiiviseksi slotiksi
                 client.player.getInventory().selectedSlot = slot;
 
-                // Lasketaan etäisyys palikkaan
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                // Jos ollaan liian kaukana (yli 3.5 blokkia), liikutetaan pelaajaa kohti kohdetta
-                if (distance > 3.5) {
-                    moveToTarget(client, targetVec);
-                    return; // Odotetaan että päästään lähemmäs
+                // Pehmennetään katseen kääntö kohti kohdetta
+                smoothLookAt(client, targetVec);
+
+                // Jos ollaan liian kaukana (yli 4 blokkia), liikutaan lähemmäs
+                if (distance > 4.0) {
+                    client.options.forwardKey.setPressed(true);
+                    return; 
+                } else {
+                    client.options.forwardKey.setPressed(false);
                 }
 
-                // Käännetään pelaajan katse kohti palikkaa
-                lookAt(client, targetVec);
-
-                // Poistetaan jonosta ja rakennetaan
+                // Poistetaan jonosta
                 buildQueue.poll();
 
-                BlockPos targetPos = blockData.pos.down();
+                // Luodaan tarkka osuma-alue palikan alapuolelle tai viereen, jotta peli hyväksyy rakennuksen
+                BlockPos supportPos = blockData.pos.down();
                 BlockHitResult hitResult = new BlockHitResult(
-                        targetVec,
+                        Vec3d.ofCenter(supportPos),
                         Direction.UP,
-                        targetPos,
+                        supportPos,
                         false
                 );
 
+                // Pakotetaan vuorovaikutus: simuloidaan pelaajan oikeaa hiiren klikkausta (Right Click)
                 ActionResult result = client.interactionManager.interactBlock(
                         client.player,
                         Hand.MAIN_HAND,
                         hitResult
                 );
 
-                if (result.isAccepted()) {
-                    client.player.sendMessage(Text.literal("§7Auto-placed: " + blockData.blockName), true);
+                // Lähetetään myös svingi-animaatio, jotta käsi heiluu ja serveri/peli rekisteröi teon varmasti
+                client.player.swingHand(Hand.MAIN_HAND);
+
+                if (result.isAccepted() || result.shouldSwingHand()) {
+                    client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
+                } else {
+                    // Jos suora asetus ei mennyt läpi, yritetään suoraa maailmanmuokkausta varatoimenpiteenä
+                    client.world.setBlockState(blockData.pos, block.getDefaultState());
+                    client.player.sendMessage(Text.literal("§7Force-placed: " + blockData.blockName), true);
                 }
             }
         });
     }
 
-    private void moveToTarget(MinecraftClient client, Vec3d target) {
-        Vec3d playerPos = client.player.getPos();
-        Vec3d dir = target.subtract(playerPos).normalize();
-        
-        // Annetaan pieni liikkumissyöte eteenpäin/kohteen suuntaan
-        client.player.setYaw((float) Math.toDegrees(Math.atan2(-dir.x, dir.z)));
-        client.player.setPitch((float) Math.toDegrees(-Math.asin(dir.y)));
-        
-        // Simusoidaan eteenpäin kävelyä
-        client.options.forwardKey.setPressed(true);
-    }
-
-    private void lookAt(MinecraftClient client, Vec3d target) {
+    private void smoothLookAt(MinecraftClient client, Vec3d target) {
         Vec3d playerPos = client.player.getEyePos();
         Vec3d dir = target.subtract(playerPos);
         
@@ -156,11 +156,21 @@ public class AutobuilderClient implements ClientModInitializer {
         double diffZ = dir.z;
         double dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
-        float yaw = (float) (Math.atan2(diffZ, diffX) * (180 / Math.PI)) - 90.0F;
-        float pitch = (float) (-(Math.atan2(diffY, dist) * (180 / Math.PI)));
+        float targetYaw = (float) (Math.atan2(diffZ, diffX) * (180 / Math.PI)) - 90.0F;
+        float targetPitch = (float) (-(Math.atan2(diffY, dist) * (180 / Math.PI)));
 
-        client.player.setYaw(yaw);
-        client.player.setPitch(pitch);
+        float currentYaw = client.player.getYaw();
+        float currentPitch = client.player.getPitch();
+
+        float yawDiff = MathHelper.wrapDegrees(targetYaw - currentYaw);
+        float pitchDiff = targetPitch - currentPitch;
+
+        float maxStep = 30.0f;
+        float newYaw = currentYaw + MathHelper.clamp(yawDiff, -maxStep, maxStep);
+        float newPitch = currentPitch + MathHelper.clamp(pitchDiff, -maxStep, maxStep);
+
+        client.player.setYaw(newYaw);
+        client.player.setPitch(newPitch);
     }
 
     private int findItemInHotbar(MinecraftClient client, Block block) {
@@ -228,7 +238,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 isBuilding = true;
-                client.player.sendMessage(Text.literal("§aAutoBuilder: Movement & Building started! Total blocks: " + buildQueue.size()), false);
+                client.player.sendMessage(Text.literal("§aAutoBuilder: Active building started! Total blocks: " + buildQueue.size()), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
