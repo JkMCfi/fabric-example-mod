@@ -211,39 +211,21 @@ public class AutobuilderClient implements ClientModInitializer {
                 for (String regionName : regions.getKeys()) {
                     NbtCompound region = regions.getCompound(regionName);
                     
-                    // Tulostetaan chattiin alueen avaimet vianjäljitystä varten
-                    client.player.sendMessage(Text.literal("§bRegion keys: " + region.getKeys().toString()), false);
-
                     int sizeX = 0, sizeY = 0, sizeZ = 0;
-                    
-                    // Tarkistetaan yleisimmät koon sisältävät tagit
-                    for (String key : new String[]{"Size", "size", "Dimensions", "dimension"}) {
-                        if (region.contains(key)) {
-                            NbtCompound sizeTag = region.getCompound(key);
-                            sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : (sizeTag.contains("X") ? sizeTag.getInt("X") : 0);
-                            sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : (sizeTag.contains("Y") ? sizeTag.getInt("Y") : 0);
-                            sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : (sizeTag.contains("Z") ? sizeTag.getInt("Z") : 0);
-                            if (sizeX > 0 && sizeY > 0 && sizeZ > 0) break;
-                        }
-                    }
-
-                    // Jos ei löytynyt suoraan, lasketaan MinPos / MaxPos kautta
-                    if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
-                        if (region.contains("MinPos") && region.contains("MaxPos")) {
-                            NbtCompound min = region.getCompound("MinPos");
-                            NbtCompound max = region.getCompound("MaxPos");
-                            sizeX = Math.abs(max.getInt("x") - min.getInt("x")) + 1;
-                            sizeY = Math.abs(max.getInt("y") - min.getInt("y")) + 1;
-                            sizeZ = Math.abs(max.getInt("z") - min.getInt("z")) + 1;
-                        }
+                    if (region.contains("Size")) {
+                        NbtCompound sizeTag = region.getCompound("Size");
+                        sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : (sizeTag.contains("X") ? sizeTag.getInt("X") : 0);
+                        sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : (sizeTag.contains("Y") ? sizeTag.getInt("Y") : 0);
+                        sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : (sizeTag.contains("Z") ? sizeTag.getInt("Z") : 0);
                     }
 
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
-                        client.player.sendMessage(Text.literal("§cStill could not read dimensions!"), false);
+                        client.player.sendMessage(Text.literal("§cCould not read region dimensions!"), false);
                         continue;
                     }
 
-                    NbtList palette = region.getList("Palette", 10);
+                    // Käytetään löydettyä oikeaa avainta BlockStatePalette
+                    NbtList palette = region.getList("BlockStatePalette", 10);
                     long[] blockStates = region.getLongArray("BlockStates");
 
                     if (palette.isEmpty() || blockStates.length == 0) {
