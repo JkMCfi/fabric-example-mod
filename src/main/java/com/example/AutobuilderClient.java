@@ -257,18 +257,15 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
-                // Toiminto 4: Poistetaan tilapäinen dirt-palikka, kun sen yli on päästy
                 if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 1) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
                 }
 
-                // Toiminto 5: Anti-Stuck Pozition Tarkistus (jos pelaaja ei liiku, pakotetaan kierto)
                 if (lastPlayerPos != null && client.player.getPos().squaredDistanceTo(lastPlayerPos) < 0.001) {
                     absoluteStuckCounter++;
                     if (absoluteStuckCounter > 30) {
                         absoluteStuckCounter = 0;
-                        // Siirretään jumiutunut palikka jonon perälle (Toiminto 6)
                         if (!buildQueue.isEmpty()) {
                             buildQueue.add(buildQueue.poll());
                         }
@@ -287,6 +284,14 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 BlockData blockData = buildQueue.peek();
+
+                // TURVATARKISTUS: Jos palikan kohta osuu suoraan pelaajan osumalaatikkoon, siirretään se jonon perälle, ettei rakenneta pelaajan päälle/sisään
+                Box playerBox = client.player.getBoundingBox();
+                Box blockBox = new Box(blockData.pos);
+                if (playerBox.intersects(blockBox)) {
+                    buildQueue.add(buildQueue.poll());
+                    return;
+                }
 
                 Block targetBlock = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
                 if (targetBlock == null || targetBlock == Blocks.AIR) {
@@ -307,17 +312,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
-
-                // Toiminto 7: Collision Box Escape (ei jää kävelemään palikan sisään)
-                if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
-                    if (client.options != null) {
-                        client.options.forwardKey.setPressed(false);
-                        client.options.backKey.setPressed(true); // Otetaan askel taakse
-                    }
-                    return;
-                } else {
-                    if (client.options != null) client.options.backKey.setPressed(false);
-                }
 
                 smoothLookAt(client, targetVec);
 
@@ -362,7 +356,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
-                        // Toiminto 1: Auto-Jump Booster
                         if (client.options != null) client.options.jumpKey.setPressed(true);
 
                         if (stuckTimer > 15 && tempDirtPos == null) {
@@ -387,7 +380,6 @@ public class AutobuilderClient implements ClientModInitializer {
                             }
                         }
 
-                        // Toiminto 2: Auto-Strafe (sivuttaisaskel kulmista pääsemiseksi)
                         if (stuckTimer > 25 && client.options != null) {
                             client.options.leftKey.setPressed(true);
                         }
@@ -410,7 +402,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
                 tickCounter = 0;
 
-                // Toiminto 8 & 9: Älykäs inventaarion ja hotbarin käyttö
                 int slot = findItemOrBringToHotbar(client, targetBlock.asItem());
                 if (slot == -1) {
                     if (client.player.getAbilities().creativeMode) {
@@ -672,7 +663,6 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
-    // Main Menu (B)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
             super(Text.literal("AutoBuilder Settings"));
