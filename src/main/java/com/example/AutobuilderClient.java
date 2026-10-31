@@ -12,7 +12,6 @@ import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
-import java.nio.file.Path;
 
 public class AutobuilderClient implements ClientModInitializer {
     private static KeyBinding buildKey;
@@ -29,7 +28,7 @@ public class AutobuilderClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
-                    client.player.sendMessage(Text.literal("§aAutoBuilder:trying to load the schematic..."), false);
+                    client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
                     loadAndParseSchematic(client);
                 }
             }
@@ -38,29 +37,26 @@ public class AutobuilderClient implements ClientModInitializer {
 
     private void loadAndParseSchematic(net.minecraft.client.MinecraftClient client) {
         try {
-            // Etsitään pelikansiosta schematics-kansio
             File schematicsDir = new File(client.runDirectory, "schematics");
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
-                client.player.sendMessage(Text.literal("§cVirhe: no files found!"), false);
+                client.player.sendMessage(Text.literal("§cError: No .litematic files found in schematics folder!"), false);
                 return;
             }
 
-            // Otetaan ensimmäinen vastaan tullut litematic-tiedosto
             File schematicFile = files[0];
-            client.player.sendMessage(Text.literal("§eLöytyi tiedosto: " + schematicFile.getName()), false);
+            client.player.sendMessage(Text.literal("§eFound file: " + schematicFile.getName()), false);
 
-            // Luetaan NBT-data turvallisesti
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             
             if (nbt != null) {
-                client.player.sendMessage(Text.literal("§aLitematic succesfully saved to the mod!"), false);
+                client.player.sendMessage(Text.literal("§aLitematic successfully loaded to the mod!"), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("§cError: " + e.getMessage()), false);
+                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
             }
         }
     }
