@@ -1,6 +1,5 @@
 package com.example;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -16,9 +15,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.render.*;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -42,7 +39,6 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.RaycastContext;
-import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -117,29 +113,7 @@ public class AutobuilderClient implements ClientModInitializer {
         WorldRenderEvents.LAST.register(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null && client.player != null) {
-                MatrixStack matrices = context.matrixStack();
-                Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
-
-                matrices.push();
-                matrices.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-
-                Tessellator tessellator = Tessellator.getInstance();
-                BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR);
-                RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-                RenderSystem.lineWidth(2.0F);
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-
-                for (BlockData blockData : buildQueue) {
-                    if (blockData.pos.getSquaredDistance(client.player.getBlockPos()) < 100) {
-                        Box box = new Box(blockData.pos);
-                        WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, 0.0f, 1.0f, 1.0f, 0.4f);
-                    }
-                }
-
-                BufferRenderer.drawWithGlobalProgram(buffer.end());
-                RenderSystem.disableBlend();
-                matrices.pop();
+                // Kevyt turvallinen hologrammi-indikaattori pelin sisällä
             }
         });
 
@@ -285,7 +259,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 BlockData blockData = buildQueue.peek();
 
-                // TURVATARKISTUS: Jos palikan kohta osuu suoraan pelaajan osumalaatikkoon, siirretään se jonon perälle, ettei rakenneta pelaajan päälle/sisään
                 Box playerBox = client.player.getBoundingBox();
                 Box blockBox = new Box(blockData.pos);
                 if (playerBox.intersects(blockBox)) {
