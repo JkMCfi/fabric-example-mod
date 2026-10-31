@@ -57,14 +57,24 @@ public class AutobuilderClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
-                    client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
-                    loadAndParseSchematic(client);
+                    if (isBuilding) {
+                        // Painamalla uudelleen keskeytetään / laitetaan pauselle
+                        isBuilding = false;
+                        client.options.forwardKey.setPressed(false);
+                        client.options.jumpKey.setPressed(false);
+                        client.player.sendMessage(Text.literal("§eAutoBuilder: Paused!"), false);
+                    } else {
+                        client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
+                        loadAndParseSchematic(client);
+                    }
                 }
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
                 if (buildQueue.isEmpty()) {
                     isBuilding = false;
+                    client.options.forwardKey.setPressed(false);
+                    client.options.jumpKey.setPressed(false);
                     client.player.sendMessage(Text.literal("§aAutoBuilder: Building complete!"), false);
                     return;
                 }
@@ -95,6 +105,8 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.player.sendMessage(Text.literal("§cOut of items! Opening /ah..."), false);
                         client.player.networkHandler.sendChatCommand("ah");
                         isBuilding = false;
+                        client.options.forwardKey.setPressed(false);
+                        client.options.jumpKey.setPressed(false);
                         return;
                     }
                 }
@@ -106,11 +118,20 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 smoothLookAt(client, targetVec);
 
+                // Jos ollaan kaukana, kävellään kohteeseen
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
+                    
+                    // ANTI-STUCK: Jos hahmo törmää seinään/esteeseen matkalla, hypätään automaattisesti
+                    if (client.player.horizontalCollision) {
+                        client.options.jumpKey.setPressed(true);
+                    } else {
+                        client.options.jumpKey.setPressed(false);
+                    }
                     return; 
                 } else {
                     client.options.forwardKey.setPressed(false);
+                    client.options.jumpKey.setPressed(false);
                 }
 
                 buildQueue.poll();
@@ -213,22 +234,21 @@ public class AutobuilderClient implements ClientModInitializer {
                     
                     int sizeX = 0, sizeY = 0, sizeZ = 0;
 
-                    // Yritetään lukea Size-yhdistelmästä
                     if (region.contains("Size")) {
                         NbtCompound sizeTag = region.getCompound("Size");
-                        sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : (sizeTag.contains("X") ? sizeTag.getInt("X") : 0);
-                        sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : (sizeTag.contains("Y") ? sizeTag.getInt("Y") : 0);
-                        sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : (sizeTag.contains("Z") ? sizeTag.getInt("Z") : 0);
+                        sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : sizeTag.getInt("X");
+                        sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : sizeTag.getInt("Y");
+                        sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : sizeTag.getInt("Z");
                     }
 
-                    // Varmistus: Jos Size ei toiminut, pakotetaan suoraan tiedoston mitat (18x8x13)
+                    // Varmistusmitat litematic-tiedostollesi (18x8x13)
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
                         sizeX = 18;
                         sizeY = 8;
                         sizeZ = 13;
                     }
 
-                    NbtList palette = region.getList("BlockStatePalette", 10);
+                    NbtList palette = region.contains("BlockStatePalette") ? region.getList("BlockStatePalette", 10) : region.getList("Palette", 10);
                     long[] blockStates = region.getLongArray("BlockStates");
 
                     if (palette.isEmpty() || blockStates.length == 0) {
