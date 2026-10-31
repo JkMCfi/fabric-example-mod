@@ -13,22 +13,19 @@ public class AutobuilderClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // 1. Rekisteröidään näppäin (oletuksena N-kirjain)
+        // Rekisteröidään näppäin Minecraft 1.21.4 yhteensopivalla tavalla
         buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.autobuilder.build", // Kieli-id
+                "key.autobuilder.build",
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_N,         // Mikä näppäin (tässä N)
-                "category.autobuilder"   // Asetusvalikon kategoria pelissä
+                GLFW.GLFW_KEY_N,
+                "category.autobuilder"
         ));
 
-        // 2. Kuunnellaan, milloin näppäintä painetaan pelin aikana
+        // Kuunnellaan, milloin näppäintä painetaan pelissä
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null) {
-                    // Lähettää viestin pelin chatissa pelaajalle
                     client.player.sendMessage(Text.literal("§aAutoBuilder-toiminto aktivoitu!"), false);
-                    
-                    // Tänne lisätään myöhemmin litematic-tiedoston luku- ja rakennuslogiikka
                 }
             }
         });
