@@ -9,7 +9,9 @@ import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.BlockItem;
@@ -27,6 +29,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameMode;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -43,11 +46,14 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean isBuilding = false;
     private static boolean waitingForAhConfirmation = false;
     
-    // Säädettävät arvot menusta
-    public static int tickDelay = 3; // Raufallinen rakennustahti
-    public static float smoothness = 4.0f; // Erittäin sulava ja rauhallinen katseen kääntö (ei snappeja)
+    // Asetukset (Säädettävissä menusta)
+    public static int tickDelay = 3; 
+    public static float smoothness = 4.0f; 
+    public static boolean autoLeaveOnAdmin = false; // Admin/Spectator turva päällä/pois
+
     private static int tickCounter = 0;
     private static int stuckTimer = 0;
+    private static int safetyCheckTimer = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -70,7 +76,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
-        // Menun näppäimeksi vaihdettu B
         menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.menu",
                 InputUtil.Type.KEYSYM,
@@ -82,6 +87,28 @@ public class AutobuilderClient implements ClientModInitializer {
             while (menuKey.wasPressed()) {
                 if (client.player != null) {
                     client.setScreen(new AutobuilderMenuScreen());
+                }
+            }
+
+            // Tarkistetaan turvaetäisyys admin/spectator-pelaajiin vain moninpelissä
+            if (autoLeaveOnAdmin && client.world != null && client.player != null && !client.isInSingleplayer()) {
+                safetyCheckTimer++;
+                if (safetyCheckTimer > 20) { // Tarkistetaan kerran sekunnissa
+                    safetyCheckTimer = 0;
+                    if (client.getNetworkHandler() != null) {
+                        for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
+                            if (entry.getProfile().getId().equals(client.player.getGameProfile().getId())) continue;
+                            
+                            // Jos pelaaja on spectatorissa tai admin (gamemode/tila tarkistus tab-listasta)
+                            if (entry.getGameMode() == GameMode.SPECTATOR) {
+                                isBuilding = false;
+                                client.player.sendMessage(Text.literal("§c[AutoBuilder Turva] Spectator havaittu lähettyvillä! Poistutaan palvelimelta..."), false);
+                                client.world.disconnect();
+                                client.setScreen(new MultiplayerScreen(null));
+                                return;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -166,18 +193,16 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                // Käännetään katse sulavasti kohti asetettavaa palikkaa (ei snappeja)
+                // Sulava katseen kääntö kohti palikkaa
                 smoothLookAt(client, targetVec);
 
-                // Älykäs liikkuminen ja jumiutumisen esto (Anti-Stuck)
+                // Anti-Stuck: jumiutumisen esto
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
 
-                    // Jos hahmo ei liiku eteenpäin vaikka yrittää (jäänyt jumiin blokkien väliin)
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
                         client.options.jumpKey.setPressed(true);
-                        // Yritetään väistää sivulle jos jumi jatkuu
                         if (stuckTimer > 20) {
                             client.options.leftKey.setPressed(true);
                         }
@@ -241,7 +266,6 @@ public class AutobuilderClient implements ClientModInitializer {
         float yawDiff = MathHelper.wrapDegrees(targetYaw - currentYaw);
         float pitchDiff = targetPitch - currentPitch;
 
-        // Pehmeä interpolointi ilman äkillisiä hyppyjä
         float newYaw = currentYaw + (yawDiff / smoothness);
         float newPitch = currentPitch + (pitchDiff / smoothness);
 
@@ -339,7 +363,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Lähimmät palikat rakennetaan ensin
                 tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
                 buildQueue.addAll(tempQueue);
 
@@ -378,7 +401,7 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
-    // Asetusmenu (Avautuu nyt B-kirjaimella)
+    // Asetusmenu (Avautuu B-kirjaimella)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
             super(Text.literal("AutoBuilder Asetukset"));
@@ -392,24 +415,32 @@ public class AutobuilderClient implements ClientModInitializer {
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay), button -> {
                 AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
                 button.setMessage(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay));
-            }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 50, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness), button -> {
                 AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
                 button.setMessage(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness));
-            }).dimensions(centerX - 100, centerY, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 20, 200, 20).build());
+
+            // Admin / Spectator turva kytkin
+            String adminStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aPäällä" : "§cPois";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Admin/Spectator Turva: " + adminStatus), button -> {
+                AutobuilderClient.autoLeaveOnAdmin = !AutobuilderClient.autoLeaveOnAdmin;
+                String newStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aPäällä" : "§cPois";
+                button.setMessage(Text.literal("Admin/Spectator Turva: " + newStatus));
+            }).dimensions(centerX - 100, centerY + 10, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Takaisin peliin"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(null);
                 }
-            }).dimensions(centerX - 100, centerY + 40, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
         }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 70, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 80, 0xFFFFFF);
             super.render(context, mouseX, mouseY, delta);
         }
 
