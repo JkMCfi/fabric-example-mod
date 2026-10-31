@@ -375,4 +375,80 @@ public class AutobuilderClient implements ClientModInitializer {
 
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
                         sizeX = 18;
-                        sizeY
+                        sizeY = 8;
+                        sizeZ = 13;
+                    }
+
+                    NbtList palette = region.contains("BlockStatePalette") ? region.getList("BlockStatePalette", 10) : region.getList("Palette", 10);
+                    long[] blockStates = region.getLongArray("BlockStates");
+
+                    if (palette.isEmpty() || blockStates.length == 0) {
+                        continue;
+                    }
+
+                    int minBits = Math.max(2, 32 - Integer.numberOfLeadingZeros(palette.size() - 1));
+
+                    int index = 0;
+                    for (int y = 0; y < sizeY; y++) {
+                        for (int z = 0; z < sizeZ; z++) {
+                            for (int x = 0; x < sizeX; x++) {
+                                int paletteIndex = getPaletteIndex(blockStates, index, minBits);
+                                if (paletteIndex >= 0 && paletteIndex < palette.size()) {
+                                    NbtCompound blockStateTag = palette.getCompound(paletteIndex);
+                                    String blockName = blockStateTag.getString("Name");
+                                    NbtCompound propertiesTag = blockStateTag.contains("Properties") ? blockStateTag.getCompound("Properties") : null;
+
+                                    if (!blockName.equals("minecraft:air")) {
+                                        BlockPos worldPos = playerPos.add(x, y, z);
+                                        tempQueue.add(new BlockData(worldPos, blockName, propertiesTag));
+                                    }
+                                }
+                                index++;
+                            }
+                        }
+                    }
+                }
+
+                tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
+                buildQueue.addAll(tempQueue);
+
+                if (!buildQueue.isEmpty()) {
+                    isBuilding = true;
+                    isPaused = false;
+                    waitingForAhConfirmation = false;
+                    if (!silent && client.player != null) {
+                        client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
+                    }
+                } else {
+                    if (!silent && client.player != null) {
+                        client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
+                    }
+                }
+            } else {
+                if (!silent && client.player != null) {
+                    client.player.sendMessage(Text.literal("§cInvalid litematic: 'Regions' missing!"), false);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            if (!silent && client.player != null) {
+                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
+            }
+        }
+    }
+
+    private static int getPaletteIndex(long[] blockStates, int index, int bitsPerEntry) {
+        long bitIndex = (long) index * bitsPerEntry;
+        int longIndex = (int) (bitIndex / 64);
+        int bitOffset = (int) (bitIndex % 64);
+
+        if (longIndex >= blockStates.length) {
+            return 0;
+        }
+
+        long value = blockStates[longIndex] >>> bitOffset;
+        if (bitOffset + bitsPerEntry > 64 && longIndex + 1 < blockStates.length) {
+            value |= blockStates[longIndex + 1] << (64 - bitOffset);
+        }
+
+        return (int) (value &
