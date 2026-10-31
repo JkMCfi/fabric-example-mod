@@ -13,7 +13,7 @@ public class AutobuilderClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Rekisteröidään näppäin Minecraft 1.21.4 yhteensopivalla tavalla
+        // Rekisteröidään näppäin 1.21.4 yhteensopivalla tavalla
         buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.build",
                 InputUtil.Type.KEYSYM,
@@ -21,11 +21,11 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
-        // Kuunnellaan, milloin näppäintä painetaan pelissä
+        // Kuunnellaan näppäimen painallusta pelin sisällä
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null) {
-                    client.player.sendMessage(Text.literal("§aAutoBuilder-toiminto aktivoitu!"), false);
+                    client.player.sendMessage(Text.literal("§aAutoBuilder-activated!"), false);
                 }
             }
         });
