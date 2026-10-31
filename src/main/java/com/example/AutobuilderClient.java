@@ -27,13 +27,10 @@ import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -110,7 +107,7 @@ public class AutobuilderClient implements ClientModInitializer {
                         for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
                             if (entry.getProfile().getId().equals(client.player.getGameProfile().getId())) continue;
                             
-                            if (entry.getGameMode() == GameMode.SPECTATOR) {
+                            if (entry.getGameMode() != null && entry.getGameMode().isSpectator()) {
                                 isBuilding = false;
                                 isPaused = false;
                                 client.player.sendMessage(Text.literal("§c[AutoBuilder Security] Spectator nearby! Leaving server..."), false);
@@ -177,7 +174,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 BlockData blockData = buildQueue.peek();
 
-                // Check if the block is already correctly placed in the world
                 Block targetBlock = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
                 if (targetBlock == null || targetBlock == Blocks.AIR) {
                     buildQueue.poll();
@@ -186,7 +182,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 BlockState currentWorldState = client.world.getBlockState(blockData.pos);
                 if (!currentWorldState.isAir()) {
-                    // If block exists, verify if it matches what we want, then pop it
                     buildQueue.poll();
                     return;
                 }
@@ -195,13 +190,12 @@ public class AutobuilderClient implements ClientModInitializer {
                 double distance = client.player.getPos().distanceTo(targetVec);
 
                 // Prevent placing blocks inside the player's own bounding box / head
-                if (client.player.getBoundingBox().intersects(net.minecraft.util.math.Box.from(blockData.pos))) {
+                if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
                     client.options.forwardKey.setPressed(true);
                     client.options.jumpKey.setPressed(true);
                     return;
                 }
 
-                // Distance and movement control (do not wander away)
                 if (distance > 3.5) {
                     client.options.forwardKey.setPressed(true);
                     if (client.player.horizontalCollision) {
@@ -265,13 +259,14 @@ public class AutobuilderClient implements ClientModInitializer {
                 client.player.getInventory().selectedSlot = slot;
                 smoothLookAt(client, targetVec);
 
-                // Place block with precise state and support check
                 BlockState targetState = targetBlock.getDefaultState();
                 targetState = applyProperties(targetState, blockData.propertiesTag);
 
                 client.world.setBlockState(blockData.pos, targetState);
                 client.player.swingHand(Hand.MAIN_HAND);
                 client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
+                
+                buildQueue.poll();
             }
         });
     }
