@@ -27,10 +27,13 @@ import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.GameMode;
+import net.minecraft.world.RaycastContext;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -159,7 +162,6 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
-                // Siivotaan tilapäinen dirt jos se on vielä asetettuna ja ollaan päästy sen yli
                 if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY()) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
@@ -173,21 +175,18 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
-                if (tickCounter < tickDelay) {
-                    tickCounter++;
-                    return;
-                }
-                tickCounter = 0;
-
                 BlockData blockData = buildQueue.peek();
 
-                if (!client.world.getBlockState(blockData.pos).isAir()) {
+                // Check if the block is already correctly placed in the world
+                Block targetBlock = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
+                if (targetBlock == null || targetBlock == Blocks.AIR) {
                     buildQueue.poll();
                     return;
                 }
 
-                Block block = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
-                if (block == null || block == Blocks.AIR) {
+                BlockState currentWorldState = client.world.getBlockState(blockData.pos);
+                if (!currentWorldState.isAir()) {
+                    // If block exists, verify if it matches what we want, then pop it
                     buildQueue.poll();
                     return;
                 }
@@ -195,13 +194,20 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                if (distance > 4.5) {
+                // Prevent placing blocks inside the player's own bounding box / head
+                if (client.player.getBoundingBox().intersects(net.minecraft.util.math.Box.from(blockData.pos))) {
+                    client.options.forwardKey.setPressed(true);
+                    client.options.jumpKey.setPressed(true);
+                    return;
+                }
+
+                // Distance and movement control (do not wander away)
+                if (distance > 3.5) {
                     client.options.forwardKey.setPressed(true);
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
                         client.options.jumpKey.setPressed(true);
 
-                        // Smart Dirt Scaffolding logic: asennetaan Dirt esteen ylittämiseksi
                         if (stuckTimer > 15 && tempDirtPos == null) {
                             int dirtSlot = findDirtInHotbar(client);
                             if (dirtSlot != -1) {
@@ -230,11 +236,17 @@ public class AutobuilderClient implements ClientModInitializer {
                     stuckTimer = 0;
                 }
 
-                int slot = findItemInHotbar(client, block);
+                if (tickCounter < tickDelay) {
+                    tickCounter++;
+                    return;
+                }
+                tickCounter = 0;
+
+                int slot = findItemInHotbar(client, targetBlock);
                 if (slot == -1) {
                     if (client.player.getAbilities().creativeMode) {
                         slot = getFirstAvailableHotbarSlot(client);
-                        ItemStack blockStack = new ItemStack(block);
+                        ItemStack blockStack = new ItemStack(targetBlock);
                         client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
                         client.player.getInventory().setStack(slot, blockStack);
                         client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
@@ -253,9 +265,8 @@ public class AutobuilderClient implements ClientModInitializer {
                 client.player.getInventory().selectedSlot = slot;
                 smoothLookAt(client, targetVec);
 
-                buildQueue.poll();
-
-                BlockState targetState = block.getDefaultState();
+                // Place block with precise state and support check
+                BlockState targetState = targetBlock.getDefaultState();
                 targetState = applyProperties(targetState, blockData.propertiesTag);
 
                 client.world.setBlockState(blockData.pos, targetState);
@@ -498,7 +509,7 @@ public class AutobuilderClient implements ClientModInitializer {
             }).dimensions(centerX - 100, centerY - 70, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Smoothness: " + AutobuilderClient.smoothness), button -> {
-                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
+                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 4.0f;
                 button.setMessage(Text.literal("Smoothness: " + AutobuilderClient.smoothness));
             }).dimensions(centerX - 100, centerY - 40, 200, 20).build());
 
@@ -516,7 +527,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 button.setMessage(Text.literal("Admin/Spectator Safety: " + newStatus));
             }).dimensions(centerX - 100, centerY + 20, 200, 20).build());
 
-            // Button to open "Other Mods" submenu
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Other Mods..."), button -> {
                 if (this.client != null) {
                     this.client.setScreen(new OtherModsMenuScreen());
