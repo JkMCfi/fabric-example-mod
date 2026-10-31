@@ -7,6 +7,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
@@ -61,9 +62,19 @@ public class AutobuilderClient implements ClientModInitializer {
                     int sizeY = region.getCompound("Size").getInt("y");
                     int sizeZ = region.getCompound("Size").getInt("z");
                     
-                    client.player.sendMessage(Text.literal("§eBuilding Region Size: " + sizeX + "x" + sizeY + "x" + sizeZ), false);
-                    
-                    // Tähän lisätään lohkojen sijoituslogiikka seuraavassa vaiheessa
+                    client.player.sendMessage(Text.literal("§eRegion Size: " + sizeX + "x" + sizeY + "x" + sizeZ), false);
+
+                    // 1. Luetaan Paletti (mitä palikoita rakennuksessa on)
+                    if (region.contains("Palette")) {
+                        NbtList palette = region.getList("Palette", 10); // 10 tarkoittaa NbtCompound-tyyppiä
+                        client.player.sendMessage(Text.literal("§aPalette loaded! Unique blocks: " + palette.size()), false);
+                    }
+
+                    // 2. Luetaan BlockStates (bittitaulukko, joka kertoo sijainnit)
+                    if (region.contains("BlockStates")) {
+                        long[] blockStates = region.getLongArray("BlockStates");
+                        client.player.sendMessage(Text.literal("§aBlockStates loaded! Array size: " + blockStates.length), false);
+                    }
                 }
             }
         } catch (Exception e) {
