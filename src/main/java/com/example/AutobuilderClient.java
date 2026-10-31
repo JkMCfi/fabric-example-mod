@@ -134,37 +134,37 @@ public class AutobuilderClient implements ClientModInitializer {
                             ItemStack stack = client.player.getInventory().getStack(i);
                             if (stack.getItem() == Items.TOTEM_OF_UNDYING) {
                                 client.player.sendMessage(Text.literal("§a[AutoBuilder PvP] Retotem activated!"), true);
-                                // Siirretään totem offhandiin (simuloitu klikkaus)
                                 break;
                             }
                         }
                     }
                 }
 
-                // Auto Pearl Escape (jos terveys < 8 sydäntä / 16 HP)
+                // Auto Pearl Escape
                 if (autoPearlEnabled && client.player.getHealth() < 16.0f) {
                     for (int i = 0; i < 9; i++) {
                         ItemStack stack = client.player.getInventory().getStack(i);
                         if (stack.getItem() == Items.ENDER_PEARL) {
                             client.player.getInventory().selectedSlot = i;
-                            client.player.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                            if (client.interactionManager != null) {
+                                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                            }
                             client.player.sendMessage(Text.literal("§c[AutoBuilder PvP] Low health! Auto Pearl triggered!"), false);
-                            autoPearlEnabled = false; // Estetään spämmi
+                            autoPearlEnabled = false;
                             break;
                         }
                     }
                 }
 
-                // Auto Crystal & Anchor PvP Bot (inhimillisellä viiveellä)
+                // Auto Crystal & Anchor PvP Bot
                 if (pvpBotEnabled) {
                     pvpCooldown++;
-                    if (pvpCooldown >= 10) { // Suorittaa noin 2 kertaa sekunnissa inhimillisen tuntuisesti
+                    if (pvpCooldown >= 10) {
                         pvpCooldown = 0;
                         for (Entity entity : client.world.getEntities()) {
                             if (entity instanceof PlayerEntity targetPlayer && targetPlayer != client.player) {
                                 double dist = client.player.distanceTo(targetPlayer);
                                 if (dist <= 6.0) {
-                                    // Etsitään kristallit / ankkurit ja kohdistetaan inhimillisesti
                                     Vec3d targetVec = targetPlayer.getPos().add(0, 1, 0);
                                     smoothLookAt(client, targetVec);
                                     break;
@@ -271,7 +271,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 double distance = client.player.getPos().distanceTo(targetVec);
 
                 if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
-                    client.options.forwardKey.setPressed(false);
+                    if (client.options != null) client.options.forwardKey.setPressed(false);
                     return;
                 }
 
@@ -287,7 +287,7 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
                     stuckTimer++;
-                    client.options.forwardKey.setPressed(true);
+                    if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (stuckTimer > 25) {
                         stuckTimer = 0;
                         int dirtSlot = findDirtInHotbar(client);
@@ -300,7 +300,7 @@ public class AutobuilderClient implements ClientModInitializer {
                             if (client.world.getBlockState(underPos).isAir()) {
                                 client.world.setBlockState(underPos, Blocks.DIRT.getDefaultState());
                                 tempDirtPos = underPos;
-                                client.player.options.jumpKey.setPressed(true);
+                                if (client.options != null) client.options.jumpKey.setPressed(true);
                             }
                         }
                     }
@@ -308,10 +308,10 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 if (distance > 3.5) {
-                    client.options.forwardKey.setPressed(true);
+                    if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
-                        client.options.jumpKey.setPressed(true);
+                        if (client.options != null) client.options.jumpKey.setPressed(true);
 
                         if (stuckTimer > 15 && tempDirtPos == null) {
                             int dirtSlot = findDirtInHotbar(client);
@@ -328,13 +328,15 @@ public class AutobuilderClient implements ClientModInitializer {
                             }
                         }
 
-                        if (stuckTimer > 25) {
+                        if (stuckTimer > 25 && client.options != null) {
                             client.options.leftKey.setPressed(true);
                         }
                     } else {
                         stuckTimer = 0;
-                        client.options.jumpKey.setPressed(false);
-                        client.options.leftKey.setPressed(false);
+                        if (client.options != null) {
+                            client.options.jumpKey.setPressed(false);
+                            client.options.leftKey.setPressed(false);
+                        }
                     }
                     return; 
                 } else {
@@ -874,7 +876,7 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Submenu for "Other Mods" (Including Auto Crystal, Auto Anchor, Retotem & Auto Pearl)
+    // Submenu for "Other Mods"
     public static class OtherModsMenuScreen extends Screen {
         public OtherModsMenuScreen() {
             super(Text.literal("Other Mods & PvP Settings"));
