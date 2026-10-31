@@ -451,4 +451,94 @@ public class AutobuilderClient implements ClientModInitializer {
             value |= blockStates[longIndex + 1] << (64 - bitOffset);
         }
 
-        return (int) (value &
+        return (int) (value & ((1L << bitsPerEntry) - 1));
+    }
+
+    public static class AutobuilderMenuScreen extends Screen {
+        public AutobuilderMenuScreen() {
+            super(Text.literal("AutoBuilder Settings"));
+        }
+
+        @Override
+        protected void init() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Schematic: " + getActiveSchematicDisplayName()), button -> {
+                cycleSchematic();
+                button.setMessage(Text.literal("Schematic: " + getActiveSchematicDisplayName()));
+            }).dimensions(centerX - 100, centerY - 90, 200, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay), button -> {
+                AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
+                button.setMessage(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay));
+            }).dimensions(centerX - 100, centerY - 60, 200, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Smoothness: " + AutobuilderClient.smoothness), button -> {
+                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
+                button.setMessage(Text.literal("Smoothness: " + AutobuilderClient.smoothness));
+            }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
+
+            String holoStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Hologram: " + holoStatus), button -> {
+                AutobuilderClient.showHologram = !AutobuilderClient.showHologram;
+                String newStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
+                button.setMessage(Text.literal("Hologram: " + newStatus));
+            }).dimensions(centerX - 100, centerY, 200, 20).build());
+
+            String adminStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Admin/Spectator Safety: " + adminStatus), button -> {
+                AutobuilderClient.autoLeaveOnAdmin = !AutobuilderClient.autoLeaveOnAdmin;
+                String newStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
+                button.setMessage(Text.literal("Admin/Spectator Safety: " + newStatus));
+            }).dimensions(centerX - 100, centerY + 30, 200, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Back to Game"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(null);
+                }
+            }).dimensions(centerX - 100, centerY + 65, 200, 20).build());
+        }
+
+        private String getActiveSchematicDisplayName() {
+            if (AutobuilderClient.selectedSchematicName == null || AutobuilderClient.selectedSchematicName.isEmpty()) {
+                File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
+                File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
+                if (files != null && files.length > 0) {
+                    AutobuilderClient.selectedSchematicName = files[0].getName();
+                } else {
+                    return "None found";
+                }
+            }
+            return AutobuilderClient.selectedSchematicName;
+        }
+
+        private void cycleSchematic() {
+            File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
+            File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
+            if (files == null || files.length == 0) return;
+
+            int currentIndex = 0;
+            for (int i = 0; i < files.length; i++) {
+                if (files[i].getName().equals(AutobuilderClient.selectedSchematicName)) {
+                    currentIndex = i;
+                    break;
+                }
+            }
+            int nextIndex = (currentIndex + 1) % files.length;
+            AutobuilderClient.selectedSchematicName = files[nextIndex].getName();
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            this.renderBackground(context, mouseX, mouseY, delta);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 115, 0xFFFFFF);
+            super.render(context, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return true;
+        }
+    }
+}
