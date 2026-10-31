@@ -91,7 +91,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.player.getAbilities().creativeMode) {
                         slot = getFirstAvailableHotbarSlot(client);
                         ItemStack blockStack = new ItemStack(block);
-                        // Lähetetään luovan tilan paketti serverille/clientille (slot 36-44 ovat hotbar)
                         client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
                         client.player.getInventory().setStack(slot, blockStack);
                         client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
@@ -143,7 +142,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 // Heilutetaan kättä
                 client.player.swingHand(Hand.MAIN_HAND);
 
-                if (result.isAccepted() || result.shouldSwingHand()) {
+                if (result.isAccepted()) {
                     client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
                 } else {
                     client.world.setBlockState(blockData.pos, block.getDefaultState());
@@ -197,7 +196,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 return i;
             }
         }
-        return client.player.getInventory().selectedSlot; // Korvaa nykyisen jos hotbar on täynnä
+        return client.player.getInventory().selectedSlot;
     }
 
     private void loadAndParseSchematic(MinecraftClient client) {
