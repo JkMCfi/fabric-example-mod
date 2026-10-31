@@ -44,9 +44,10 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean waitingForAhConfirmation = false;
     
     // Säädettävät arvot menusta
-    public static int tickDelay = 3; // Hitaampi ja rauhallisempi tahti
-    public static float smoothness = 8.0f; // Pehmeä katseen kääntö
+    public static int tickDelay = 3; // Raufallinen rakennustahti
+    public static float smoothness = 4.0f; // Erittäin sulava ja rauhallinen katseen kääntö (ei snappeja)
     private static int tickCounter = 0;
+    private static int stuckTimer = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -69,10 +70,11 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
+        // Menun näppäimeksi vaihdettu B
         menuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.menu",
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_M,
+                GLFW.GLFW_KEY_B,
                 "category.autobuilder"
         ));
 
@@ -98,6 +100,8 @@ public class AutobuilderClient implements ClientModInitializer {
                         isBuilding = false;
                         client.options.forwardKey.setPressed(false);
                         client.options.jumpKey.setPressed(false);
+                        client.options.leftKey.setPressed(false);
+                        client.options.rightKey.setPressed(false);
                         client.player.sendMessage(Text.literal("§eAutoBuilder: Pausetettu!"), false);
                     } else {
                         client.player.sendMessage(Text.literal("§aAutoBuilder: Ladataan schematiciä..."), false);
@@ -111,6 +115,8 @@ public class AutobuilderClient implements ClientModInitializer {
                     isBuilding = false;
                     client.options.forwardKey.setPressed(false);
                     client.options.jumpKey.setPressed(false);
+                    client.options.leftKey.setPressed(false);
+                    client.options.rightKey.setPressed(false);
                     client.player.sendMessage(Text.literal("§aAutoBuilder: Rakennus valmis!"), false);
                     return;
                 }
@@ -160,30 +166,39 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
+                // Käännetään katse sulavasti kohti asetettavaa palikkaa (ei snappeja)
                 smoothLookAt(client, targetVec);
 
-                // Anti-stuck: hypätään jos hahmo jää jumiin rakenteiden väliin
+                // Älykäs liikkuminen ja jumiutumisen esto (Anti-Stuck)
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
-                    
-                    if (client.player.horizontalCollision || client.player.verticalCollision) {
+
+                    // Jos hahmo ei liiku eteenpäin vaikka yrittää (jäänyt jumiin blokkien väliin)
+                    if (client.player.horizontalCollision) {
+                        stuckTimer++;
                         client.options.jumpKey.setPressed(true);
+                        // Yritetään väistää sivulle jos jumi jatkuu
+                        if (stuckTimer > 20) {
+                            client.options.leftKey.setPressed(true);
+                        }
                     } else {
+                        stuckTimer = 0;
                         client.options.jumpKey.setPressed(false);
+                        client.options.leftKey.setPressed(false);
                     }
                     return; 
                 } else {
                     client.options.forwardKey.setPressed(false);
                     client.options.jumpKey.setPressed(false);
+                    client.options.leftKey.setPressed(false);
+                    stuckTimer = 0;
                 }
 
                 buildQueue.poll();
 
-                // Luodaan tarkka BlockState litematicin ominaisuuksilla (suunta, portaat, arkut, dispenserit jne.)
                 BlockState targetState = block.getDefaultState();
                 targetState = applyProperties(targetState, blockData.propertiesTag);
 
-                // Asetetaan palikka suoraan maailmaan oikeassa asennossa
                 client.world.setBlockState(blockData.pos, targetState);
                 client.player.swingHand(Hand.MAIN_HAND);
                 client.player.sendMessage(Text.literal("§7Asetettu: " + blockData.blockName), true);
@@ -226,8 +241,9 @@ public class AutobuilderClient implements ClientModInitializer {
         float yawDiff = MathHelper.wrapDegrees(targetYaw - currentYaw);
         float pitchDiff = targetPitch - currentPitch;
 
-        float newYaw = currentYaw + MathHelper.clamp(yawDiff, -smoothness, smoothness);
-        float newPitch = currentPitch + MathHelper.clamp(pitchDiff, -smoothness, smoothness);
+        // Pehmeä interpolointi ilman äkillisiä hyppyjä
+        float newYaw = currentYaw + (yawDiff / smoothness);
+        float newPitch = currentPitch + (pitchDiff / smoothness);
 
         client.player.setYaw(newYaw);
         client.player.setPitch(newPitch);
@@ -323,7 +339,7 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Järjestetään niin, että hahmo rakentaa aina lähimmästä pisteestä alkaen!
+                // Lähimmät palikat rakennetaan ensin
                 tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
                 buildQueue.addAll(tempQueue);
 
@@ -362,7 +378,7 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
-    // Asetusmenu (Avautuu painamalla M-kirjainta)
+    // Asetusmenu (Avautuu nyt B-kirjaimella)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
             super(Text.literal("AutoBuilder Asetukset"));
@@ -378,9 +394,9 @@ public class AutobuilderClient implements ClientModInitializer {
                 button.setMessage(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay));
             }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
 
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Sulavuus: " + AutobuilderClient.smoothness), button -> {
-                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 20.0f ? 4.0f : AutobuilderClient.smoothness + 4.0f;
-                button.setMessage(Text.literal("Sulavuus: " + AutobuilderClient.smoothness));
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness), button -> {
+                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
+                button.setMessage(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness));
             }).dimensions(centerX - 100, centerY, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Takaisin peliin"), button -> {
