@@ -29,7 +29,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
 import net.minecraft.world.GameMode;
 import org.lwjgl.glfw.GLFW;
 
@@ -203,19 +202,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 } else {
                     stopMovement(client);
                     stuckTimer = 0;
-                }
-
-                BlockHitResult rayHit = client.world.raycast(new RaycastContext(
-                        client.player.getEyePos(),
-                        targetVec,
-                        RaycastContext.ShapeType.COLLIDER,
-                        RaycastContext.FluidHandling.NONE,
-                        client.player
-                ));
-
-                if (rayHit.getBlockPos() != null && !rayHit.getBlockPos().equals(blockData.pos) && !client.world.getBlockState(rayHit.getBlockPos()).isAir()) {
-                    buildQueue.poll();
-                    return;
                 }
 
                 int slot = findItemInHotbar(client, block);
