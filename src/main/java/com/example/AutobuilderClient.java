@@ -83,21 +83,28 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
-                // Tarkistetaan esine hotbarista
+                // Etsitään esine hotbarista
                 int slot = findItemInHotbar(client, block);
+                
                 if (slot == -1) {
+                    // Jos ollaan creativessa, otetaan palikka automaattisesti hotbariin
                     if (client.player.getAbilities().creativeMode) {
-                        client.player.sendMessage(Text.literal("§cMissing item in creative: " + blockData.blockName), true);
-                        buildQueue.poll();
+                        slot = getFirstAvailableHotbarSlot(client);
+                        ItemStack blockStack = new ItemStack(block);
+                        // Lähetetään luovan tilan paketti serverille/clientille (slot 36-44 ovat hotbar)
+                        client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
+                        client.player.getInventory().setStack(slot, blockStack);
+                        client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
                     } else {
+                        // Survivalissa: jos tavara loppuu, avataan /ah ja pysäytetään rakennus
                         client.player.sendMessage(Text.literal("§cOut of items! Opening /ah..."), false);
                         client.player.networkHandler.sendChatCommand("ah");
                         isBuilding = false;
+                        return;
                     }
-                    return;
                 }
 
-                // Vaihdetaan esine käteen aktiiviseksi slotiksi
+                // Asetetaan aktiivinen slotti käteen
                 client.player.getInventory().selectedSlot = slot;
 
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
@@ -117,7 +124,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 // Poistetaan jonosta
                 buildQueue.poll();
 
-                // Luodaan tarkka osuma-alue palikan alapuolelle tai viereen, jotta peli hyväksyy rakennuksen
+                // Luodaan osuma-alue palikan alapuolelle
                 BlockPos supportPos = blockData.pos.down();
                 BlockHitResult hitResult = new BlockHitResult(
                         Vec3d.ofCenter(supportPos),
@@ -126,20 +133,19 @@ public class AutobuilderClient implements ClientModInitializer {
                         false
                 );
 
-                // Pakotetaan vuorovaikutus: simuloidaan pelaajan oikeaa hiiren klikkausta (Right Click)
+                // Simuloidaan pelaajan oikeaa hiiren klikkausta
                 ActionResult result = client.interactionManager.interactBlock(
                         client.player,
                         Hand.MAIN_HAND,
                         hitResult
                 );
 
-                // Lähetetään myös svingi-animaatio, jotta käsi heiluu ja serveri/peli rekisteröi teon varmasti
+                // Heilutetaan kättä
                 client.player.swingHand(Hand.MAIN_HAND);
 
                 if (result.isAccepted() || result.shouldSwingHand()) {
                     client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
                 } else {
-                    // Jos suora asetus ei mennyt läpi, yritetään suoraa maailmanmuokkausta varatoimenpiteenä
                     client.world.setBlockState(blockData.pos, block.getDefaultState());
                     client.player.sendMessage(Text.literal("§7Force-placed: " + blockData.blockName), true);
                 }
@@ -183,6 +189,15 @@ public class AutobuilderClient implements ClientModInitializer {
             }
         }
         return -1;
+    }
+
+    private int getFirstAvailableHotbarSlot(MinecraftClient client) {
+        for (int i = 0; i < 9; i++) {
+            if (client.player.getInventory().getStack(i).isEmpty()) {
+                return i;
+            }
+        }
+        return client.player.getInventory().selectedSlot; // Korvaa nykyisen jos hotbar on täynnä
     }
 
     private void loadAndParseSchematic(MinecraftClient client) {
@@ -238,7 +253,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 isBuilding = true;
-                client.player.sendMessage(Text.literal("§aAutoBuilder: Active building started! Total blocks: " + buildQueue.size()), false);
+                client.player.sendMessage(Text.literal("§aAutoBuilder: Smart building started! Total blocks: " + buildQueue.size()), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
