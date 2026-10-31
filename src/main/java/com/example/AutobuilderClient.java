@@ -50,8 +50,21 @@ public class AutobuilderClient implements ClientModInitializer {
 
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             
-            if (nbt != null) {
-                client.player.sendMessage(Text.literal("§aLitematic successfully loaded to the mod!"), false);
+            if (nbt != null && nbt.contains("Regions")) {
+                NbtCompound regions = nbt.getCompound("Regions");
+                client.player.sendMessage(Text.literal("§aRegions found in schematic!"), false);
+                
+                for (String regionName : regions.getKeys()) {
+                    NbtCompound region = regions.getCompound(regionName);
+                    
+                    int sizeX = region.getCompound("Size").getInt("x");
+                    int sizeY = region.getCompound("Size").getInt("y");
+                    int sizeZ = region.getCompound("Size").getInt("z");
+                    
+                    client.player.sendMessage(Text.literal("§eBuilding Region Size: " + sizeX + "x" + sizeY + "x" + sizeZ), false);
+                    
+                    // Tähän lisätään lohkojen sijoituslogiikka seuraavassa vaiheessa
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
