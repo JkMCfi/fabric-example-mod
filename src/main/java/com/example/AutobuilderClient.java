@@ -16,6 +16,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
@@ -47,17 +48,21 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean isPaused = false;
     private static boolean waitingForAhConfirmation = false;
     
-    // Settings (Adjustable via Menu)
+    // Main Settings
     public static int tickDelay = 3; 
     public static float smoothness = 4.0f; 
     public static boolean autoLeaveOnAdmin = false;
     public static boolean showHologram = true;
     public static String selectedSchematicName = "";
 
+    // Other Mods Settings
+    public static boolean ahFlippingEnabled = false;
+
     private static int tickCounter = 0;
     private static int stuckTimer = 0;
     private static int safetyCheckTimer = 0;
     private static long buildKeyPressTime = 0;
+    private static BlockPos tempDirtPos = null;
 
     private static class BlockData {
         final BlockPos pos;
@@ -154,6 +159,12 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
+                // Siivotaan tilapäinen dirt jos se on vielä asetettuna ja ollaan päästy sen yli
+                if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY()) {
+                    client.interactionManager.breakBlock(tempDirtPos);
+                    tempDirtPos = null;
+                }
+
                 if (buildQueue.isEmpty()) {
                     isBuilding = false;
                     isPaused = false;
@@ -189,7 +200,22 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
                         client.options.jumpKey.setPressed(true);
-                        if (stuckTimer > 20) {
+
+                        // Smart Dirt Scaffolding logic: asennetaan Dirt esteen ylittämiseksi
+                        if (stuckTimer > 15 && tempDirtPos == null) {
+                            int dirtSlot = findDirtInHotbar(client);
+                            if (dirtSlot != -1) {
+                                client.player.getInventory().selectedSlot = dirtSlot;
+                                BlockPos dirtPos = client.player.getBlockPos().down();
+                                if (client.world.getBlockState(dirtPos).isAir()) {
+                                    client.world.setBlockState(dirtPos, Blocks.DIRT.getDefaultState());
+                                    tempDirtPos = dirtPos;
+                                    client.player.sendMessage(Text.literal("§7AutoBuilder: Used dirt to climb over obstacle"), true);
+                                }
+                            }
+                        }
+
+                        if (stuckTimer > 25) {
                             client.options.leftKey.setPressed(true);
                         }
                     } else {
@@ -297,6 +323,16 @@ public class AutobuilderClient implements ClientModInitializer {
                 if (blockItem.getBlock() == block) {
                     return i;
                 }
+            }
+        }
+        return -1;
+    }
+
+    private int findDirtInHotbar(MinecraftClient client) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = client.player.getInventory().getStack(i);
+            if (!stack.isEmpty() && stack.getItem() == Items.DIRT) {
+                return i;
             }
         }
         return -1;
@@ -440,6 +476,7 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
+    // Main Menu (B)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
             super(Text.literal("AutoBuilder Settings"));
@@ -453,37 +490,44 @@ public class AutobuilderClient implements ClientModInitializer {
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Schematic: " + getActiveSchematicDisplayName()), button -> {
                 cycleSchematic();
                 button.setMessage(Text.literal("Schematic: " + getActiveSchematicDisplayName()));
-            }).dimensions(centerX - 100, centerY - 90, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 100, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay), button -> {
                 AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
                 button.setMessage(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay));
-            }).dimensions(centerX - 100, centerY - 60, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 70, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Smoothness: " + AutobuilderClient.smoothness), button -> {
                 AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
                 button.setMessage(Text.literal("Smoothness: " + AutobuilderClient.smoothness));
-            }).dimensions(centerX - 100, centerY - 30, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 40, 200, 20).build());
 
             String holoStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Hologram: " + holoStatus), button -> {
                 AutobuilderClient.showHologram = !AutobuilderClient.showHologram;
                 String newStatus = AutobuilderClient.showHologram ? "§aON" : "§cOFF";
                 button.setMessage(Text.literal("Hologram: " + newStatus));
-            }).dimensions(centerX - 100, centerY, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 10, 200, 20).build());
 
             String adminStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Admin/Spectator Safety: " + adminStatus), button -> {
                 AutobuilderClient.autoLeaveOnAdmin = !AutobuilderClient.autoLeaveOnAdmin;
                 String newStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aON" : "§cOFF";
                 button.setMessage(Text.literal("Admin/Spectator Safety: " + newStatus));
-            }).dimensions(centerX - 100, centerY + 30, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 20, 200, 20).build());
+
+            // Button to open "Other Mods" submenu
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Other Mods..."), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new OtherModsMenuScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back to Game"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(null);
                 }
-            }).dimensions(centerX - 100, centerY + 65, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 80, 200, 20).build());
         }
 
         private String getActiveSchematicDisplayName() {
@@ -518,7 +562,45 @@ public class AutobuilderClient implements ClientModInitializer {
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 115, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 120, 0xFFFFFF);
+            super.render(context, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return true;
+        }
+    }
+
+    // Submenu for "Other Mods"
+    public static class OtherModsMenuScreen extends Screen {
+        public OtherModsMenuScreen() {
+            super(Text.literal("Other Mods"));
+        }
+
+        @Override
+        protected void init() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            String flippingStatus = AutobuilderClient.ahFlippingEnabled ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Auto Order / AH Flipping (DonutSMP): " + flippingStatus), button -> {
+                AutobuilderClient.ahFlippingEnabled = !AutobuilderClient.ahFlippingEnabled;
+                String newStatus = AutobuilderClient.ahFlippingEnabled ? "§aON" : "§cOFF";
+                button.setMessage(Text.literal("Auto Order / AH Flipping (DonutSMP): " + newStatus));
+            }).dimensions(centerX - 130, centerY - 20, 260, 20).build());
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new AutobuilderMenuScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 30, 200, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            this.renderBackground(context, mouseX, mouseY, delta);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 50, 0xFFFFFF);
             super.render(context, mouseX, mouseY, delta);
         }
 
