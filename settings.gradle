@@ -9,4 +9,5 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'autobuilder'
+// Should match your modid
+rootProject.name = 'modid'
