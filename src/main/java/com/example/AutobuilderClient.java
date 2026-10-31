@@ -7,15 +7,19 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
+import java.util.LinkedList;
+import java.util.Queue;
 
 public class AutobuilderClient implements ClientModInitializer {
     private static KeyBinding buildKey;
+    private static final Queue<BlockPos> buildQueue = new LinkedList<>();
+    private static boolean isBuilding = false;
 
     @Override
     public void onInitializeClient() {
@@ -26,11 +30,28 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
+        // Tick-tapahtuma joka ajaa rakennusjonoa eteenpäin pelin pyöriessä
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
                     client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
                     loadAndParseSchematic(client);
+                }
+            }
+
+            // Jos rakennus on käynnissä, asetetaan muutama palikka per tick
+            if (isBuilding && client.player != null && client.world != null) {
+                for (int i = 0; i < 5 && !buildQueue.isEmpty(); i++) {
+                    BlockPos pos = buildQueue.poll();
+                    
+                    // Tässä kohtaa lähetetään palikan sijoituspyyntö tai simuloidaan
+                    // Esimerkiksi tulostetaan chattiin koordinaatti testiksi:
+                    client.player.sendMessage(Text.literal("§7Building block at: " + pos.toShortString()), true);
+                }
+
+                if (buildQueue.isEmpty()) {
+                    isBuilding = false;
+                    client.player.sendMessage(Text.literal("§aAutoBuilder: Building complete!"), false);
                 }
             }
         });
@@ -55,6 +76,9 @@ public class AutobuilderClient implements ClientModInitializer {
                 NbtCompound regions = nbt.getCompound("Regions");
                 client.player.sendMessage(Text.literal("§aRegions found in schematic!"), false);
                 
+                buildQueue.clear();
+                BlockPos playerPos = client.player.getBlockPos();
+
                 for (String regionName : regions.getKeys()) {
                     NbtCompound region = regions.getCompound(regionName);
                     
@@ -62,20 +86,18 @@ public class AutobuilderClient implements ClientModInitializer {
                     int sizeY = region.getCompound("Size").getInt("y");
                     int sizeZ = region.getCompound("Size").getInt("z");
                     
-                    client.player.sendMessage(Text.literal("§eRegion Size: " + sizeX + "x" + sizeY + "x" + sizeZ), false);
-
-                    // 1. Luetaan Paletti (mitä palikoita rakennuksessa on)
-                    if (region.contains("Palette")) {
-                        NbtList palette = region.getList("Palette", 10); // 10 tarkoittaa NbtCompound-tyyppiä
-                        client.player.sendMessage(Text.literal("§aPalette loaded! Unique blocks: " + palette.size()), false);
-                    }
-
-                    // 2. Luetaan BlockStates (bittitaulukko, joka kertoo sijainnit)
-                    if (region.contains("BlockStates")) {
-                        long[] blockStates = region.getLongArray("BlockStates");
-                        client.player.sendMessage(Text.literal("§aBlockStates loaded! Array size: " + blockStates.length), false);
+                    // Täytetään jono esimerkkikoordinaateilla pelaajan ympärille
+                    for (int x = 0; x < Math.min(sizeX, 10); x++) {
+                        for (int y = 0; y < Math.min(sizeY, 5); y++) {
+                            for (int z = 0; z < Math.min(sizeZ, 10); z++) {
+                                buildQueue.add(playerPos.add(x, y, z));
+                            }
+                        }
                     }
                 }
+
+                isBuilding = true;
+                client.player.sendMessage(Text.literal("§aBuilding started! Queue size: " + buildQueue.size()), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
