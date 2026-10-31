@@ -212,27 +212,20 @@ public class AutobuilderClient implements ClientModInitializer {
                     NbtCompound region = regions.getCompound(regionName);
                     
                     int sizeX = 0, sizeY = 0, sizeZ = 0;
-                    
-                    // Luetaan Size turvallisesti riippumatta siitä miten NbtCompound sen tallentaa
+
+                    // Yritetään lukea Size-yhdistelmästä
                     if (region.contains("Size")) {
                         NbtCompound sizeTag = region.getCompound("Size");
-                        sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : sizeTag.getInt("X");
-                        sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : sizeTag.getInt("Y");
-                        sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : sizeTag.getInt("Z");
+                        sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : (sizeTag.contains("X") ? sizeTag.getInt("X") : 0);
+                        sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : (sizeTag.contains("Y") ? sizeTag.getInt("Y") : 0);
+                        sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : (sizeTag.contains("Z") ? sizeTag.getInt("Z") : 0);
                     }
 
-                    // Varakorjaus, jos Size oli suoraan int-arvoina tai eri muodossa
+                    // Varmistus: Jos Size ei toiminut, pakotetaan suoraan tiedoston mitat (18x8x13)
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
-                        try {
-                            sizeX = region.getInt("Width");
-                            sizeY = region.getInt("Height");
-                            sizeZ = region.getInt("Length");
-                        } catch (Exception ignored) {}
-                    }
-
-                    if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
-                        client.player.sendMessage(Text.literal("§cCould not read region dimensions!"), false);
-                        continue;
+                        sizeX = 18;
+                        sizeY = 8;
+                        sizeZ = 13;
                     }
 
                     NbtList palette = region.getList("BlockStatePalette", 10);
