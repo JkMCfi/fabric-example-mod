@@ -26,7 +26,6 @@ import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -121,16 +120,14 @@ public class AutobuilderClient implements ClientModInitializer {
                 if (buildKeyPressTime == 0) {
                     buildKeyPressTime = System.currentTimeMillis();
                 } else if (System.currentTimeMillis() - buildKeyPressTime > 1000) {
-                    // Hold N for > 1 second: Force restart from current position
                     if (client.player != null && client.world != null) {
                         client.player.sendMessage(Text.literal("§eAutoBuilder: Restarting build from current position!"), false);
                         loadAndParseSchematic(client, false);
-                        buildKeyPressTime = -1; // Prevent spamming
+                        buildKeyPressTime = -1;
                     }
                 }
             } else {
                 if (buildKeyPressTime > 0 && buildKeyPressTime != -1) {
-                    // Normal single press
                     if (client.player != null && client.world != null) {
                         if (waitingForAhConfirmation) {
                             client.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
@@ -185,7 +182,6 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
-                // Check distance and reach (Do not place through walls or if out of reach)
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
@@ -203,13 +199,12 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.options.leftKey.setPressed(false);
                     }
                     smoothLookAt(client, targetVec);
-                    return; // Walk closer first, do not attempt to place yet!
+                    return; 
                 } else {
                     stopMovement(client);
                     stuckTimer = 0;
                 }
 
-                // Check line of sight (Raycast to prevent placing through solid walls)
                 BlockHitResult rayHit = client.world.raycast(new RaycastContext(
                         client.player.getEyePos(),
                         targetVec,
@@ -219,7 +214,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 ));
 
                 if (rayHit.getBlockPos() != null && !rayHit.getBlockPos().equals(blockData.pos) && !client.world.getBlockState(rayHit.getBlockPos()).isAir()) {
-                    // Wall in the way, skip or wait until position is clear
                     buildQueue.poll();
                     return;
                 }
@@ -381,104 +375,4 @@ public class AutobuilderClient implements ClientModInitializer {
 
                     if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
                         sizeX = 18;
-                        sizeY = 8;
-                        sizeZ = 13;
-                    }
-
-                    NbtList palette = region.contains("BlockStatePalette") ? region.getList("BlockStatePalette", 10) : region.getList("Palette", 10);
-                    long[] blockStates = region.getLongArray("BlockStates");
-
-                    if (palette.isEmpty() || blockStates.length == 0) {
-                        continue;
-                    }
-
-                    int minBits = Math.max(2, 32 - Integer.numberOfLeadingZeros(palette.size() - 1));
-
-                    int index = 0;
-                    for (int y = 0; y < sizeY; y++) {
-                        for (int z = 0; z < sizeZ; z++) {
-                            for (int x = 0; x < sizeX; x++) {
-                                int paletteIndex = getPaletteIndex(blockStates, index, minBits);
-                                if (paletteIndex >= 0 && paletteIndex < palette.size()) {
-                                    NbtCompound blockStateTag = palette.getCompound(paletteIndex);
-                                    String blockName = blockStateTag.getString("Name");
-                                    NbtCompound propertiesTag = blockStateTag.contains("Properties") ? blockStateTag.getCompound("Properties") : null;
-
-                                    if (!blockName.equals("minecraft:air")) {
-                                        BlockPos worldPos = playerPos.add(x, y, z);
-                                        tempQueue.add(new BlockData(worldPos, blockName, propertiesTag));
-                                    }
-                                }
-                                index++;
-                            }
-                        }
-                    }
-                }
-
-                tempQueue.sort(Comparator.comparingDouble(b -> client.player.getPos().squaredDistanceTo(Vec3d.ofCenter(b.pos))));
-                buildQueue.addAll(tempQueue);
-
-                if (!buildQueue.isEmpty()) {
-                    isBuilding = true;
-                    isPaused = false;
-                    waitingForAhConfirmation = false;
-                    if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
-                    }
-                } else {
-                    if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
-                    }
-                }
-            } else {
-                if (!silent && client.player != null) {
-                    client.player.sendMessage(Text.literal("§cInvalid litematic: 'Regions' missing!"), false);
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            if (!silent && client.player != null) {
-                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
-            }
-        }
-    }
-
-    private static int getPaletteIndex(long[] blockStates, int index, int bitsPerEntry) {
-        long bitIndex = (long) index * bitsPerEntry;
-        int longIndex = (int) (bitIndex / 64);
-        int bitOffset = (int) (bitIndex % 64);
-
-        if (longIndex >= blockStates.length) {
-            return 0;
-        }
-
-        long value = blockStates[longIndex] >>> bitOffset;
-        if (bitOffset + bitsPerEntry > 64 && longIndex + 1 < blockStates.length) {
-            value |= blockStates[longIndex + 1] << (64 - bitOffset);
-        }
-
-        return (int) (value & ((1L << bitsPerEntry) - 1));
-    }
-
-    // Settings Menu (Opened with B key)
-    public static class AutobuilderMenuScreen extends Screen {
-        public AutobuilderMenuScreen() {
-            super(Text.literal("AutoBuilder Settings"));
-        }
-
-        @Override
-        protected void init() {
-            int centerX = this.width / 2;
-            int centerY = this.height / 2;
-
-            // Schematic Selector
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Schematic: " + getActiveSchematicDisplayName()), button -> {
-                cycleSchematic();
-                button.setMessage(Text.literal("Schematic: " + getActiveSchematicDisplayName()));
-            }).dimensions(centerX - 100, centerY - 90, 200, 20).build());
-
-            // Build Speed / Tick Delay
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay), button -> {
-                AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
-                button.setMessage(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay));
-            }).dimensions(centerX - 100, centerY - 60, 200, 2
+                        sizeY
