@@ -83,19 +83,16 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
-                // Etsitään esine hotbarista
                 int slot = findItemInHotbar(client, block);
                 
                 if (slot == -1) {
-                    // Jos ollaan creativessa, otetaan palikka automaattisesti hotbariin
                     if (client.player.getAbilities().creativeMode) {
                         slot = getFirstAvailableHotbarSlot(client);
                         ItemStack blockStack = new ItemStack(block);
                         client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
                         client.player.getInventory().setStack(slot, blockStack);
-                        client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
+                        client.player.sendMessage(Text.literal("§7Auto-fetched: " + blockData.blockName), true);
                     } else {
-                        // Survivalissa: jos tavara loppuu, avataan /ah ja pysäytetään rakennus
                         client.player.sendMessage(Text.literal("§cOut of items! Opening /ah..."), false);
                         client.player.networkHandler.sendChatCommand("ah");
                         isBuilding = false;
@@ -103,16 +100,13 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                // Asetetaan aktiivinen slotti käteen
                 client.player.getInventory().selectedSlot = slot;
 
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                // Pehmennetään katseen kääntö kohti kohdetta
                 smoothLookAt(client, targetVec);
 
-                // Jos ollaan liian kaukana (yli 4 blokkia), liikutaan lähemmäs
                 if (distance > 4.0) {
                     client.options.forwardKey.setPressed(true);
                     return; 
@@ -120,10 +114,8 @@ public class AutobuilderClient implements ClientModInitializer {
                     client.options.forwardKey.setPressed(false);
                 }
 
-                // Poistetaan jonosta
                 buildQueue.poll();
 
-                // Luodaan osuma-alue palikan alapuolelle
                 BlockPos supportPos = blockData.pos.down();
                 BlockHitResult hitResult = new BlockHitResult(
                         Vec3d.ofCenter(supportPos),
@@ -132,14 +124,12 @@ public class AutobuilderClient implements ClientModInitializer {
                         false
                 );
 
-                // Simuloidaan pelaajan oikeaa hiiren klikkausta
                 ActionResult result = client.interactionManager.interactBlock(
                         client.player,
                         Hand.MAIN_HAND,
                         hitResult
                 );
 
-                // Heilutetaan kättä
                 client.player.swingHand(Hand.MAIN_HAND);
 
                 if (result.isAccepted()) {
@@ -205,7 +195,7 @@ public class AutobuilderClient implements ClientModInitializer {
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
-                client.player.sendMessage(Text.literal("§cError: No .litematic files found in schematics folder!"), false);
+                client.player.sendMessage(Text.literal("§cError: No .litematic files found!"), false);
                 return;
             }
 
@@ -222,12 +212,24 @@ public class AutobuilderClient implements ClientModInitializer {
                 for (String regionName : regions.getKeys()) {
                     NbtCompound region = regions.getCompound(regionName);
                     
-                    int sizeX = region.getCompound("Size").getInt("x");
-                    int sizeY = region.getCompound("Size").getInt("y");
-                    int sizeZ = region.getCompound("Size").getInt("z");
+                    // Tarkistetaan koot turvallisesti (tukee sekä x että X)
+                    NbtCompound sizeTag = region.contains("Size") ? region.getCompound("Size") : new NbtCompound();
+                    int sizeX = sizeTag.contains("x") ? sizeTag.getInt("x") : sizeTag.getInt("X");
+                    int sizeY = sizeTag.contains("y") ? sizeTag.getInt("y") : sizeTag.getInt("Y");
+                    int sizeZ = sizeTag.contains("z") ? sizeTag.getInt("z") : sizeTag.getInt("Z");
+
+                    if (sizeX <= 0 || sizeY <= 0 || sizeZ <= 0) {
+                        client.player.sendMessage(Text.literal("§cRegion size is 0! Check schematic format."), false);
+                        continue;
+                    }
 
                     NbtList palette = region.getList("Palette", 10);
                     long[] blockStates = region.getLongArray("BlockStates");
+
+                    if (palette.isEmpty() || blockStates.length == 0) {
+                        client.player.sendMessage(Text.literal("§cPalette or BlockStates empty!"), false);
+                        continue;
+                    }
 
                     int minBits = Math.max(2, 32 - Integer.numberOfLeadingZeros(palette.size() - 1));
 
@@ -251,8 +253,14 @@ public class AutobuilderClient implements ClientModInitializer {
                     }
                 }
 
-                isBuilding = true;
-                client.player.sendMessage(Text.literal("§aAutoBuilder: Smart building started! Total blocks: " + buildQueue.size()), false);
+                if (!buildQueue.isEmpty()) {
+                    isBuilding = true;
+                    client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
+                } else {
+                    client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
+                }
+            } else {
+                client.player.sendMessage(Text.literal("§cInvalid litematic: No 'Regions' found!"), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
