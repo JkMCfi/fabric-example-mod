@@ -26,9 +26,11 @@ import net.minecraft.state.property.Property;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.RaycastContext;
 import net.minecraft.world.GameMode;
 import org.lwjgl.glfw.GLFW;
 
@@ -47,15 +49,17 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean isPaused = false;
     private static boolean waitingForAhConfirmation = false;
     
-    // Asetukset
+    // Settings (Adjustable via Menu)
     public static int tickDelay = 3; 
     public static float smoothness = 4.0f; 
     public static boolean autoLeaveOnAdmin = false;
+    public static boolean showHologram = true;
     public static String selectedSchematicName = "";
 
     private static int tickCounter = 0;
     private static int stuckTimer = 0;
     private static int safetyCheckTimer = 0;
+    private static long buildKeyPressTime = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -103,7 +107,7 @@ public class AutobuilderClient implements ClientModInitializer {
                             if (entry.getGameMode() == GameMode.SPECTATOR) {
                                 isBuilding = false;
                                 isPaused = false;
-                                client.player.sendMessage(Text.literal("§c[AutoBuilder Turva] Spectator havaittu! Poistutaan palvelimelta..."), false);
+                                client.player.sendMessage(Text.literal("§c[AutoBuilder Security] Spectator nearby! Leaving server..."), false);
                                 client.world.disconnect();
                                 client.setScreen(new MultiplayerScreen(null));
                                 return;
@@ -113,49 +117,52 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
             }
 
-            while (buildKey.wasPressed()) {
-                if (client.player != null && client.world != null) {
-                    if (waitingForAhConfirmation) {
-                        client.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
-                        client.player.sendMessage(Text.literal("§aAutoBuilder: /ah osto hyväksytty!"), false);
-                        client.player.networkHandler.sendChatCommand("ah");
-                        waitingForAhConfirmation = false;
-                        isBuilding = false;
-                        isPaused = false;
-                        return;
-                    }
-
-                    if (isBuilding) {
-                        // Laitetaan pauselle, jono säilyy ennallaan!
-                        isBuilding = false;
-                        isPaused = true;
-                        client.options.forwardKey.setPressed(false);
-                        client.options.jumpKey.setPressed(false);
-                        client.options.leftKey.setPressed(false);
-                        client.options.rightKey.setPressed(false);
-                        client.player.sendMessage(Text.literal("§eAutoBuilder: Pausetettu! (Jatkaa samasta kohdasta painamalla N)"), false);
-                    } else if (isPaused) {
-                        // Jatketaan siitä mihin jäätiin
-                        isPaused = false;
-                        isBuilding = true;
-                        client.player.sendMessage(Text.literal("§aAutoBuilder: Jatketaan rakennusta..."), false);
-                    } else {
-                        // Ladataan uusi jono alusta alkaen
-                        client.player.sendMessage(Text.literal("§aAutoBuilder: Ladataan schematiciä..."), false);
+            if (buildKey.isPressed()) {
+                if (buildKeyPressTime == 0) {
+                    buildKeyPressTime = System.currentTimeMillis();
+                } else if (System.currentTimeMillis() - buildKeyPressTime > 1000) {
+                    // Hold N for > 1 second: Force restart from current position
+                    if (client.player != null && client.world != null) {
+                        client.player.sendMessage(Text.literal("§eAutoBuilder: Restarting build from current position!"), false);
                         loadAndParseSchematic(client, false);
+                        buildKeyPressTime = -1; // Prevent spamming
                     }
                 }
+            } else {
+                if (buildKeyPressTime > 0 && buildKeyPressTime != -1) {
+                    // Normal single press
+                    if (client.player != null && client.world != null) {
+                        if (waitingForAhConfirmation) {
+                            client.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                            client.player.sendMessage(Text.literal("§aAutoBuilder: /ah purchase approved!"), false);
+                            client.player.networkHandler.sendChatCommand("ah");
+                            waitingForAhConfirmation = false;
+                            isBuilding = false;
+                            isPaused = false;
+                        } else if (isBuilding) {
+                            isBuilding = false;
+                            isPaused = true;
+                            stopMovement(client);
+                            client.player.sendMessage(Text.literal("§eAutoBuilder: Paused! Press N to resume."), false);
+                        } else if (isPaused) {
+                            isPaused = false;
+                            isBuilding = true;
+                            client.player.sendMessage(Text.literal("§aAutoBuilder: Resuming build..."), false);
+                        } else {
+                            client.player.sendMessage(Text.literal("§aAutoBuilder: Loading schematic..."), false);
+                            loadAndParseSchematic(client, false);
+                        }
+                    }
+                }
+                buildKeyPressTime = 0;
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
                 if (buildQueue.isEmpty()) {
                     isBuilding = false;
                     isPaused = false;
-                    client.options.forwardKey.setPressed(false);
-                    client.options.jumpKey.setPressed(false);
-                    client.options.leftKey.setPressed(false);
-                    client.options.rightKey.setPressed(false);
-                    client.player.sendMessage(Text.literal("§aAutoBuilder: Rakennus valmis!"), false);
+                    stopMovement(client);
+                    client.player.sendMessage(Text.literal("§aAutoBuilder: Building complete!"), false);
                     return;
                 }
 
@@ -178,38 +185,12 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
-                int slot = findItemInHotbar(client, block);
-                
-                if (slot == -1) {
-                    if (client.player.getAbilities().creativeMode) {
-                        slot = getFirstAvailableHotbarSlot(client);
-                        ItemStack blockStack = new ItemStack(block);
-                        client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
-                        client.player.getInventory().setStack(slot, blockStack);
-                        client.player.sendMessage(Text.literal("§7Haettu (Creative): " + blockData.blockName), true);
-                    } else {
-                        isBuilding = false;
-                        isPaused = true;
-                        client.options.forwardKey.setPressed(false);
-                        client.options.jumpKey.setPressed(false);
-                        waitingForAhConfirmation = true;
-
-                        client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0F, 0.3F);
-                        client.player.sendMessage(Text.literal("§c[AutoBuilder] Palikat loppu! /ah hinta ylittää mahdollisesti 200k. §ePaina N uudelleen hyväksyksesi."), false);
-                        return;
-                    }
-                }
-
-                client.player.getInventory().selectedSlot = slot;
-
+                // Check distance and reach (Do not place through walls or if out of reach)
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                smoothLookAt(client, targetVec);
-
-                if (distance > 4.0) {
+                if (distance > 4.5) {
                     client.options.forwardKey.setPressed(true);
-
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
                         client.options.jumpKey.setPressed(true);
@@ -221,13 +202,50 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.options.jumpKey.setPressed(false);
                         client.options.leftKey.setPressed(false);
                     }
-                    return; 
+                    smoothLookAt(client, targetVec);
+                    return; // Walk closer first, do not attempt to place yet!
                 } else {
-                    client.options.forwardKey.setPressed(false);
-                    client.options.jumpKey.setPressed(false);
-                    client.options.leftKey.setPressed(false);
+                    stopMovement(client);
                     stuckTimer = 0;
                 }
+
+                // Check line of sight (Raycast to prevent placing through solid walls)
+                BlockHitResult rayHit = client.world.raycast(new RaycastContext(
+                        client.player.getEyePos(),
+                        targetVec,
+                        RaycastContext.ShapeType.COLLIDER,
+                        RaycastContext.FluidHandling.NONE,
+                        client.player
+                ));
+
+                if (rayHit.getBlockPos() != null && !rayHit.getBlockPos().equals(blockData.pos) && !client.world.getBlockState(rayHit.getBlockPos()).isAir()) {
+                    // Wall in the way, skip or wait until position is clear
+                    buildQueue.poll();
+                    return;
+                }
+
+                int slot = findItemInHotbar(client, block);
+                if (slot == -1) {
+                    if (client.player.getAbilities().creativeMode) {
+                        slot = getFirstAvailableHotbarSlot(client);
+                        ItemStack blockStack = new ItemStack(block);
+                        client.interactionManager.clickCreativeStack(blockStack, 36 + slot);
+                        client.player.getInventory().setStack(slot, blockStack);
+                        client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
+                    } else {
+                        isBuilding = false;
+                        isPaused = true;
+                        stopMovement(client);
+                        waitingForAhConfirmation = true;
+
+                        client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0F, 0.3F);
+                        client.player.sendMessage(Text.literal("§c[AutoBuilder] Out of items! /ah price might exceed 200k. §ePress N to confirm purchase."), false);
+                        return;
+                    }
+                }
+
+                client.player.getInventory().selectedSlot = slot;
+                smoothLookAt(client, targetVec);
 
                 buildQueue.poll();
 
@@ -236,9 +254,18 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 client.world.setBlockState(blockData.pos, targetState);
                 client.player.swingHand(Hand.MAIN_HAND);
-                client.player.sendMessage(Text.literal("§7Asetettu: " + blockData.blockName), true);
+                client.player.sendMessage(Text.literal("§7Placed: " + blockData.blockName), true);
             }
         });
+    }
+
+    private static void stopMovement(MinecraftClient client) {
+        if (client.options != null) {
+            client.options.forwardKey.setPressed(false);
+            client.options.jumpKey.setPressed(false);
+            client.options.leftKey.setPressed(false);
+            client.options.rightKey.setPressed(false);
+        }
     }
 
     private BlockState applyProperties(BlockState state, NbtCompound propertiesTag) {
@@ -310,7 +337,7 @@ public class AutobuilderClient implements ClientModInitializer {
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
-                if (!silent && client.player != null) client.player.sendMessage(Text.literal("§cVirhe: .litematic tiedostoja ei löydy!"), false);
+                if (!silent && client.player != null) client.player.sendMessage(Text.literal("§cError: No .litematic files found!"), false);
                 return;
             }
 
@@ -329,7 +356,7 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (!silent && client.player != null) {
-                client.player.sendMessage(Text.literal("§eLöytyi tiedosto: " + schematicFile.getName()), false);
+                client.player.sendMessage(Text.literal("§eFound file: " + schematicFile.getName()), false);
             }
 
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
@@ -396,22 +423,22 @@ public class AutobuilderClient implements ClientModInitializer {
                     isPaused = false;
                     waitingForAhConfirmation = false;
                     if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§aRakennus aloitettu! Palikoita yhteensä: " + buildQueue.size()), false);
+                        client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
                     }
                 } else {
                     if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§cEi rakennettavia palikoita löydynyt!"), false);
+                        client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
                     }
                 }
             } else {
                 if (!silent && client.player != null) {
-                    client.player.sendMessage(Text.literal("§cVirheellinen litematic: 'Regions' puuttuu!"), false);
+                    client.player.sendMessage(Text.literal("§cInvalid litematic: 'Regions' missing!"), false);
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
             if (!silent && client.player != null) {
-                client.player.sendMessage(Text.literal("§cVirhe luettaessa schematiciä: " + e.getMessage()), false);
+                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
             }
         }
     }
@@ -433,10 +460,10 @@ public class AutobuilderClient implements ClientModInitializer {
         return (int) (value & ((1L << bitsPerEntry) - 1));
     }
 
-    // Asetusmenu (Avautuu B-kirjaimella)
+    // Settings Menu (Opened with B key)
     public static class AutobuilderMenuScreen extends Screen {
         public AutobuilderMenuScreen() {
-            super(Text.literal("AutoBuilder Asetukset"));
+            super(Text.literal("AutoBuilder Settings"));
         }
 
         @Override
@@ -444,75 +471,14 @@ public class AutobuilderClient implements ClientModInitializer {
             int centerX = this.width / 2;
             int centerY = this.height / 2;
 
-            // Schematicin valinta
+            // Schematic Selector
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Schematic: " + getActiveSchematicDisplayName()), button -> {
                 cycleSchematic();
                 button.setMessage(Text.literal("Schematic: " + getActiveSchematicDisplayName()));
-            }).dimensions(centerX - 100, centerY - 80, 200, 20).build());
+            }).dimensions(centerX - 100, centerY - 90, 200, 20).build());
 
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay), button -> {
+            // Build Speed / Tick Delay
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay), button -> {
                 AutobuilderClient.tickDelay = AutobuilderClient.tickDelay >= 6 ? 1 : AutobuilderClient.tickDelay + 1;
-                button.setMessage(Text.literal("Nopeus (Viive): " + AutobuilderClient.tickDelay));
-            }).dimensions(centerX - 100, centerY - 50, 200, 20).build());
-
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness), button -> {
-                AutobuilderClient.smoothness = AutobuilderClient.smoothness >= 16.0f ? 2.0f : AutobuilderClient.smoothness + 2.0f;
-                button.setMessage(Text.literal("Katseen sulavuus: " + AutobuilderClient.smoothness));
-            }).dimensions(centerX - 100, centerY - 20, 200, 20).build());
-
-            String adminStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aPäällä" : "§cPois";
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Admin/Spectator Turva: " + adminStatus), button -> {
-                AutobuilderClient.autoLeaveOnAdmin = !AutobuilderClient.autoLeaveOnAdmin;
-                String newStatus = AutobuilderClient.autoLeaveOnAdmin ? "§aPäällä" : "§cPois";
-                button.setMessage(Text.literal("Admin/Spectator Turva: " + newStatus));
-            }).dimensions(centerX - 100, centerY + 10, 200, 20).build());
-
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Takaisin peliin"), button -> {
-                if (this.client != null) {
-                    this.client.setScreen(null);
-                }
-            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
-        }
-
-        private String getActiveSchematicDisplayName() {
-            if ( AutobuilderClient.selectedSchematicName == null || AutobuilderClient.selectedSchematicName.isEmpty()) {
-                File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
-                File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
-                if (files != null && files.length > 0) {
-                    AutobuilderClient.selectedSchematicName = files[0].getName();
-                } else {
-                    return "Ei löytynyt";
-                }
-            }
-            return AutobuilderClient.selectedSchematicName;
-        }
-
-        private void cycleSchematic() {
-            File schematicsDir = new File(MinecraftClient.getInstance().runDirectory, "schematics");
-            File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
-            if (files == null || files.length == 0) return;
-
-            int currentIndex = 0;
-            for (int i = 0; i < files.length; i++) {
-                if (files[i].getName().equals(AutobuilderClient.selectedSchematicName)) {
-                    currentIndex = i;
-                    break;
-                }
-            }
-            int nextIndex = (currentIndex + 1) % files.length;
-            AutobuilderClient.selectedSchematicName = files[nextIndex].getName();
-        }
-
-        @Override
-        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 105, 0xFFFFFF);
-            super.render(context, mouseX, mouseY, delta);
-        }
-
-        @Override
-        public boolean shouldCloseOnEsc() {
-            return true;
-        }
-    }
-}
+                button.setMessage(Text.literal("Speed (Delay): " + AutobuilderClient.tickDelay));
+            }).dimensions(centerX - 100, centerY - 60, 200, 2
