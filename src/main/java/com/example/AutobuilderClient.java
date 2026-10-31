@@ -29,7 +29,7 @@ public class AutobuilderClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
-                    client.player.sendMessage(Text.literal("§aAutoBuilder: Yritetään ladata litematic-tiedostoa..."), false);
+                    client.player.sendMessage(Text.literal("§aAutoBuilder:trying to load the schematic..."), false);
                     loadAndParseSchematic(client);
                 }
             }
@@ -43,7 +43,7 @@ public class AutobuilderClient implements ClientModInitializer {
             File[] files = schematicsDir.listFiles((dir, name) -> name.endsWith(".litematic"));
 
             if (files == null || files.length == 0) {
-                client.player.sendMessage(Text.literal("§cVirhe: Yhtään .litematic-tiedostoa ei löytynyt schematics-kansiosta!"), false);
+                client.player.sendMessage(Text.literal("§cVirhe: no files found!"), false);
                 return;
             }
 
@@ -55,12 +55,12 @@ public class AutobuilderClient implements ClientModInitializer {
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             
             if (nbt != null) {
-                client.player.sendMessage(Text.literal("§aLitematic luettu onnistuneesti muistiin!"), false);
+                client.player.sendMessage(Text.literal("§aLitematic succesfully saved to the mod!"), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("§cVirhe litematic-tiedoston luvussa: " + e.getMessage()), false);
+                client.player.sendMessage(Text.literal("§cError: " + e.getMessage()), false);
             }
         }
     }
