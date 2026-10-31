@@ -21,7 +21,6 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
@@ -84,6 +83,8 @@ public class AutobuilderClient implements ClientModInitializer {
     private static long buildKeyPressTime = 0;
     private static BlockPos tempDirtPos = null;
     private static int pvpCooldown = 0;
+    private static Vec3d lastPlayerPos = null;
+    private static int absoluteStuckCounter = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -113,7 +114,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 "category.autobuilder"
         ));
 
-        // TOIMIVAKSI KORJATTU HOLOGRAMMI / RENDERÖINTI
         WorldRenderEvents.LAST.register(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null && client.player != null) {
@@ -130,11 +130,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
 
-                Matrix4f matrix4f = matrices.peek().getPositionMatrix();
-
-                // Piirretään haamulaatikko / hologrammi seuraavalle rakennettavalle palikalle
                 for (BlockData blockData : buildQueue) {
-                    // Näytetään vain lähellä olevat palikat, ettei peli lagaa
                     if (blockData.pos.getSquaredDistance(client.player.getBlockPos()) < 100) {
                         Box box = new Box(blockData.pos);
                         WorldRenderer.drawBox(matrices, buffer, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, 0.0f, 1.0f, 1.0f, 0.4f);
@@ -261,10 +257,26 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
+                // Toiminto 4: Poistetaan tilapäinen dirt-palikka, kun sen yli on päästy
                 if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 1) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
                 }
+
+                // Toiminto 5: Anti-Stuck Pozition Tarkistus (jos pelaaja ei liiku, pakotetaan kierto)
+                if (lastPlayerPos != null && client.player.getPos().squaredDistanceTo(lastPlayerPos) < 0.001) {
+                    absoluteStuckCounter++;
+                    if (absoluteStuckCounter > 30) {
+                        absoluteStuckCounter = 0;
+                        // Siirretään jumiutunut palikka jonon perälle (Toiminto 6)
+                        if (!buildQueue.isEmpty()) {
+                            buildQueue.add(buildQueue.poll());
+                        }
+                    }
+                } else {
+                    absoluteStuckCounter = 0;
+                }
+                lastPlayerPos = client.player.getPos();
 
                 if (buildQueue.isEmpty()) {
                     isBuilding = false;
@@ -296,9 +308,15 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
+                // Toiminto 7: Collision Box Escape (ei jää kävelemään palikan sisään)
                 if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
-                    if (client.options != null) client.options.forwardKey.setPressed(false);
+                    if (client.options != null) {
+                        client.options.forwardKey.setPressed(false);
+                        client.options.backKey.setPressed(true); // Otetaan askel taakse
+                    }
                     return;
+                } else {
+                    if (client.options != null) client.options.backKey.setPressed(false);
                 }
 
                 smoothLookAt(client, targetVec);
@@ -314,7 +332,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
                     stuckTimer++;
                     if (client.options != null) client.options.forwardKey.setPressed(true);
-                    if (stuckTimer > 25) {
+                    if (stuckTimer > 20) {
                         stuckTimer = 0;
                         int dirtSlot = findItemOrBringToHotbar(client, Items.DIRT);
                         if (dirtSlot == -1) {
@@ -344,6 +362,7 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.options != null) client.options.forwardKey.setPressed(true);
                     if (client.player.horizontalCollision) {
                         stuckTimer++;
+                        // Toiminto 1: Auto-Jump Booster
                         if (client.options != null) client.options.jumpKey.setPressed(true);
 
                         if (stuckTimer > 15 && tempDirtPos == null) {
@@ -368,6 +387,7 @@ public class AutobuilderClient implements ClientModInitializer {
                             }
                         }
 
+                        // Toiminto 2: Auto-Strafe (sivuttaisaskel kulmista pääsemiseksi)
                         if (stuckTimer > 25 && client.options != null) {
                             client.options.leftKey.setPressed(true);
                         }
@@ -390,6 +410,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
                 tickCounter = 0;
 
+                // Toiminto 8 & 9: Älykäs inventaarion ja hotbarin käyttö
                 int slot = findItemOrBringToHotbar(client, targetBlock.asItem());
                 if (slot == -1) {
                     if (client.player.getAbilities().creativeMode) {
@@ -447,6 +468,7 @@ public class AutobuilderClient implements ClientModInitializer {
     private static void stopMovement(MinecraftClient client) {
         if (client.options != null) {
             client.options.forwardKey.setPressed(false);
+            client.options.backKey.setPressed(false);
             client.options.jumpKey.setPressed(false);
             client.options.leftKey.setPressed(false);
             client.options.rightKey.setPressed(false);
@@ -723,7 +745,6 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Online Schematic Browser with Full Donut.build Collection, Search & Preview Image Support
     public static class OnlineSchematicBrowserScreen extends Screen {
         private TextFieldWidget searchBox;
         private List<OnlineSchematic> allSchematics = new ArrayList<>();
@@ -874,7 +895,6 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Schematic Search / Selection Screen
     public static class SchematicSearchScreen extends Screen {
         public SchematicSearchScreen() {
             super(Text.literal("Select Local Schematic"));
@@ -940,7 +960,6 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Submenu for "Other Mods"
     public static class OtherModsMenuScreen extends Screen {
         public OtherModsMenuScreen() {
             super(Text.literal("Other Mods & PvP Settings"));
