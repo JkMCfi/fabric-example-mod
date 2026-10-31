@@ -11,7 +11,7 @@ base {
 }
 
 repositories {
-    // Lisärepoja tarvittaessa
+    mavenCentral()
 }
 
 dependencies {
