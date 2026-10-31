@@ -27,10 +27,10 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    // If this exact Fabric API version is available in your repo:
+    // Use this if the exact Fabric API is resolvable from Fabric Maven:
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-    // If exact 0.141.6+1.21.11 is not in Fabric Maven yet, use CurseMaven:
+    // If it does not resolve, use:
     // modImplementation "curse.maven:fabric-api-306612:8525513"
 }
 
