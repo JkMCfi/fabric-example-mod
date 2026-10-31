@@ -8,14 +8,21 @@ import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -27,7 +34,6 @@ public class AutobuilderClient implements ClientModInitializer {
     private static final Queue<BlockData> buildQueue = new LinkedList<>();
     private static boolean isBuilding = false;
 
-    // Apuluokka lohkotiedolle
     private static class BlockData {
         final BlockPos pos;
         final String blockName;
@@ -40,7 +46,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Rekisteröidään N-näppäin
         buildKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.autobuilder.build",
                 InputUtil.Type.KEYSYM,
@@ -49,7 +54,6 @@ public class AutobuilderClient implements ClientModInitializer {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            // Kun N-näppäintä painetaan
             while (buildKey.wasPressed()) {
                 if (client.player != null && client.world != null) {
                     client.player.sendMessage(Text.literal("§aAutoBuilder: Trying to load schematic..."), false);
@@ -57,28 +61,118 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
             }
 
-            // Jos rakennus on käynnissä, asetetaan 5 palikkaa per tick
-            if (isBuilding && client.player != null && client.world != null) {
-                for (int i = 0; i < 5 && !buildQueue.isEmpty(); i++) {
-                    BlockData blockData = buildQueue.poll();
-                    
-                    try {
-                        Block block = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
-                        if (block != null && block != Blocks.AIR) {
-                            client.world.setBlockState(blockData.pos, block.getDefaultState());
-                            client.player.sendMessage(Text.literal("§7Built: " + blockData.blockName), true);
-                        }
-                    } catch (Exception e) {
-                        client.player.sendMessage(Text.literal("§cFailed to place: " + blockData.blockName), true);
-                    }
-                }
-
+            if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
                 if (buildQueue.isEmpty()) {
                     isBuilding = false;
                     client.player.sendMessage(Text.literal("§aAutoBuilder: Building complete!"), false);
+                    return;
+                }
+
+                BlockData blockData = buildQueue.peek();
+
+                // Jos paikka on jo täynnä, ohitetaan se
+                if (!client.world.getBlockState(blockData.pos).isAir()) {
+                    buildQueue.poll();
+                    return;
+                }
+
+                Block block = Registries.BLOCK.get(Identifier.tryParse(blockData.blockName));
+                if (block == null || block == Blocks.AIR) {
+                    buildQueue.poll();
+                    return;
+                }
+
+                // Tarkistetaan esine hotbarista
+                int slot = findItemInHotbar(client, block);
+                if (slot == -1) {
+                    if (client.player.getAbilities().creativeMode) {
+                        client.player.sendMessage(Text.literal("§cMissing item in creative: " + blockData.blockName), true);
+                        buildQueue.poll();
+                    } else {
+                        client.player.sendMessage(Text.literal("§cOut of items! Opening /ah..."), false);
+                        client.player.networkHandler.sendChatCommand("ah");
+                        isBuilding = false;
+                    }
+                    return;
+                }
+
+                client.player.getInventory().selectedSlot = slot;
+
+                // Lasketaan etäisyys palikkaan
+                Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
+                double distance = client.player.getPos().distanceTo(targetVec);
+
+                // Jos ollaan liian kaukana (yli 3.5 blokkia), liikutetaan pelaajaa kohti kohdetta
+                if (distance > 3.5) {
+                    moveToTarget(client, targetVec);
+                    return; // Odotetaan että päästään lähemmäs
+                }
+
+                // Käännetään pelaajan katse kohti palikkaa
+                lookAt(client, targetVec);
+
+                // Poistetaan jonosta ja rakennetaan
+                buildQueue.poll();
+
+                BlockPos targetPos = blockData.pos.down();
+                BlockHitResult hitResult = new BlockHitResult(
+                        targetVec,
+                        Direction.UP,
+                        targetPos,
+                        false
+                );
+
+                ActionResult result = client.interactionManager.interactBlock(
+                        client.player,
+                        Hand.MAIN_HAND,
+                        hitResult
+                );
+
+                if (result.isAccepted()) {
+                    client.player.sendMessage(Text.literal("§7Auto-placed: " + blockData.blockName), true);
                 }
             }
         });
+    }
+
+    private void moveToTarget(MinecraftClient client, Vec3d target) {
+        Vec3d playerPos = client.player.getPos();
+        Vec3d dir = target.subtract(playerPos).normalize();
+        
+        // Annetaan pieni liikkumissyöte eteenpäin/kohteen suuntaan
+        client.player.setYaw((float) Math.toDegrees(Math.atan2(-dir.x, dir.z)));
+        client.player.setPitch((float) Math.toDegrees(-Math.asin(dir.y)));
+        
+        // Simusoidaan eteenpäin kävelyä
+        client.options.forwardKey.setPressed(true);
+    }
+
+    private void lookAt(MinecraftClient client, Vec3d target) {
+        Vec3d playerPos = client.player.getEyePos();
+        Vec3d dir = target.subtract(playerPos);
+        
+        double diffX = dir.x;
+        double diffY = dir.y;
+        double diffZ = dir.z;
+        double dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
+
+        float yaw = (float) (Math.atan2(diffZ, diffX) * (180 / Math.PI)) - 90.0F;
+        float pitch = (float) (-(Math.atan2(diffY, dist) * (180 / Math.PI)));
+
+        client.player.setYaw(yaw);
+        client.player.setPitch(pitch);
+    }
+
+    private int findItemInHotbar(MinecraftClient client, Block block) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = client.player.getInventory().getStack(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                if (blockItem.getBlock() == block) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     private void loadAndParseSchematic(MinecraftClient client) {
@@ -134,7 +228,7 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 isBuilding = true;
-                client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
+                client.player.sendMessage(Text.literal("§aAutoBuilder: Movement & Building started! Total blocks: " + buildQueue.size()), false);
             }
         } catch (Exception e) {
             e.printStackTrace();
