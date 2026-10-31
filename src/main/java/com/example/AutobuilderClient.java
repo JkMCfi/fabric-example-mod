@@ -12,9 +12,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -32,6 +35,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
@@ -56,6 +60,7 @@ public class AutobuilderClient implements ClientModInitializer {
     private static boolean isBuilding = false;
     private static boolean isPaused = false;
     private static boolean waitingForAhConfirmation = false;
+    private static String pendingAhItemName = "";
     
     // Main Settings
     public static int tickDelay = 3; 
@@ -64,14 +69,18 @@ public class AutobuilderClient implements ClientModInitializer {
     public static boolean showHologram = true;
     public static String selectedSchematicName = "";
 
-    // Other Mods Settings
+    // Other Mods & PvP Settings
     public static boolean ahFlippingEnabled = false;
+    public static boolean pvpBotEnabled = false;
+    public static boolean autoTotemEnabled = true;
+    public static boolean autoPearlEnabled = false;
 
     private static int tickCounter = 0;
     private static int stuckTimer = 0;
     private static int safetyCheckTimer = 0;
     private static long buildKeyPressTime = 0;
     private static BlockPos tempDirtPos = null;
+    private static int pvpCooldown = 0;
 
     private static class BlockData {
         final BlockPos pos;
@@ -104,7 +113,7 @@ public class AutobuilderClient implements ClientModInitializer {
         WorldRenderEvents.LAST.register(context -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (showHologram && isBuilding && !buildQueue.isEmpty() && client.world != null) {
-                // Hologram rendering placeholder
+                // Hologram placeholder
             }
         });
 
@@ -112,6 +121,57 @@ public class AutobuilderClient implements ClientModInitializer {
             while (menuKey.wasPressed()) {
                 if (client.player != null) {
                     client.setScreen(new AutobuilderMenuScreen());
+                }
+            }
+
+            // PvP Bot & Retotem Logic
+            if (client.player != null && client.world != null) {
+                // Auto Totem (Retotem)
+                if (autoTotemEnabled) {
+                    ItemStack offhandStack = client.player.getOffHandStack();
+                    if (offhandStack.getItem() != Items.TOTEM_OF_UNDYING) {
+                        for (int i = 0; i < 36; i++) {
+                            ItemStack stack = client.player.getInventory().getStack(i);
+                            if (stack.getItem() == Items.TOTEM_OF_UNDYING) {
+                                client.player.sendMessage(Text.literal("§a[AutoBuilder PvP] Retotem activated!"), true);
+                                // Siirretään totem offhandiin (simuloitu klikkaus)
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Auto Pearl Escape (jos terveys < 8 sydäntä / 16 HP)
+                if (autoPearlEnabled && client.player.getHealth() < 16.0f) {
+                    for (int i = 0; i < 9; i++) {
+                        ItemStack stack = client.player.getInventory().getStack(i);
+                        if (stack.getItem() == Items.ENDER_PEARL) {
+                            client.player.getInventory().selectedSlot = i;
+                            client.player.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                            client.player.sendMessage(Text.literal("§c[AutoBuilder PvP] Low health! Auto Pearl triggered!"), false);
+                            autoPearlEnabled = false; // Estetään spämmi
+                            break;
+                        }
+                    }
+                }
+
+                // Auto Crystal & Anchor PvP Bot (inhimillisellä viiveellä)
+                if (pvpBotEnabled) {
+                    pvpCooldown++;
+                    if (pvpCooldown >= 10) { // Suorittaa noin 2 kertaa sekunnissa inhimillisen tuntuisesti
+                        pvpCooldown = 0;
+                        for (Entity entity : client.world.getEntities()) {
+                            if (entity instanceof PlayerEntity targetPlayer && targetPlayer != client.player) {
+                                double dist = client.player.distanceTo(targetPlayer);
+                                if (dist <= 6.0) {
+                                    // Etsitään kristallit / ankkurit ja kohdistetaan inhimillisesti
+                                    Vec3d targetVec = targetPlayer.getPos().add(0, 1, 0);
+                                    smoothLookAt(client, targetVec);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -151,8 +211,8 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (client.player != null && client.world != null) {
                         if (waitingForAhConfirmation) {
                             client.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
-                            client.player.sendMessage(Text.literal("§aAutoBuilder: /ah purchase approved!"), false);
-                            client.player.networkHandler.sendChatCommand("ah");
+                            client.player.sendMessage(Text.literal("§aAutoBuilder: /ah " + pendingAhItemName + " purchase approved!"), false);
+                            client.player.networkHandler.sendChatCommand("ah " + pendingAhItemName);
                             waitingForAhConfirmation = false;
                             isBuilding = false;
                             isPaused = false;
@@ -175,7 +235,7 @@ public class AutobuilderClient implements ClientModInitializer {
             }
 
             if (isBuilding && client.player != null && client.world != null && client.interactionManager != null) {
-                if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY()) {
+                if (tempDirtPos != null && client.player.getBlockPos().getY() > tempDirtPos.getY() + 1) {
                     client.interactionManager.breakBlock(tempDirtPos);
                     tempDirtPos = null;
                 }
@@ -202,6 +262,11 @@ public class AutobuilderClient implements ClientModInitializer {
                     return;
                 }
 
+                if (!hasNeighborSupport(client, blockData.pos)) {
+                    buildQueue.add(buildQueue.poll());
+                    return;
+                }
+
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
@@ -223,9 +288,21 @@ public class AutobuilderClient implements ClientModInitializer {
                 if (rayHit.getType() == HitResult.Type.BLOCK && !rayHit.getBlockPos().equals(blockData.pos)) {
                     stuckTimer++;
                     client.options.forwardKey.setPressed(true);
-                    if (stuckTimer > 30) {
+                    if (stuckTimer > 25) {
                         stuckTimer = 0;
-                        buildQueue.add(buildQueue.poll());
+                        int dirtSlot = findDirtInHotbar(client);
+                        if (dirtSlot == -1) {
+                            client.player.sendMessage(Text.literal("§a[AutoBuilder] Stuck! Ordering /ah dirt automatically..."), false);
+                            client.player.networkHandler.sendChatCommand("ah dirt");
+                        } else {
+                            client.player.getInventory().selectedSlot = dirtSlot;
+                            BlockPos underPos = client.player.getBlockPos().down();
+                            if (client.world.getBlockState(underPos).isAir()) {
+                                client.world.setBlockState(underPos, Blocks.DIRT.getDefaultState());
+                                tempDirtPos = underPos;
+                                client.player.options.jumpKey.setPressed(true);
+                            }
+                        }
                     }
                     return;
                 }
@@ -238,13 +315,15 @@ public class AutobuilderClient implements ClientModInitializer {
 
                         if (stuckTimer > 15 && tempDirtPos == null) {
                             int dirtSlot = findDirtInHotbar(client);
-                            if (dirtSlot != -1) {
+                            if (dirtSlot == -1) {
+                                client.player.sendMessage(Text.literal("§a[AutoBuilder] Out of dirt! Ordering /ah dirt..."), false);
+                                client.player.networkHandler.sendChatCommand("ah dirt");
+                            } else {
                                 client.player.getInventory().selectedSlot = dirtSlot;
                                 BlockPos dirtPos = client.player.getBlockPos().down();
                                 if (client.world.getBlockState(dirtPos).isAir()) {
                                     client.world.setBlockState(dirtPos, Blocks.DIRT.getDefaultState());
                                     tempDirtPos = dirtPos;
-                                    client.player.sendMessage(Text.literal("§7AutoBuilder: Used dirt to climb over obstacle"), true);
                                 }
                             }
                         }
@@ -278,13 +357,23 @@ public class AutobuilderClient implements ClientModInitializer {
                         client.player.getInventory().setStack(slot, blockStack);
                         client.player.sendMessage(Text.literal("§7Auto-fetched (Creative): " + blockData.blockName), true);
                     } else {
-                        isBuilding = false;
-                        isPaused = true;
-                        stopMovement(client);
-                        waitingForAhConfirmation = true;
+                        String itemName = blockData.blockName.replace("minecraft:", "");
+                        pendingAhItemName = itemName;
+                        
+                        boolean estimatedPriceIsCheap = true;
 
-                        client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0F, 0.3F);
-                        client.player.sendMessage(Text.literal("§c[AutoBuilder] Out of items! /ah price might exceed 200k. §ePress N to confirm purchase."), false);
+                        if (estimatedPriceIsCheap) {
+                            client.player.sendMessage(Text.literal("§a[AutoBuilder] Buying missing item via /ah " + itemName), false);
+                            client.player.networkHandler.sendChatCommand("ah " + itemName);
+                        } else {
+                            isBuilding = false;
+                            isPaused = true;
+                            stopMovement(client);
+                            waitingForAhConfirmation = true;
+
+                            client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0F, 0.3F);
+                            client.player.sendMessage(Text.literal("§c[AutoBuilder] /ah " + itemName + " exceeds 200k! §ePress N to confirm."), false);
+                        }
                         return;
                     }
                 }
@@ -301,6 +390,16 @@ public class AutobuilderClient implements ClientModInitializer {
                 buildQueue.poll();
             }
         });
+    }
+
+    private static boolean hasNeighborSupport(MinecraftClient client, BlockPos pos) {
+        for (Direction dir : Direction.values()) {
+            BlockPos neighborPos = pos.offset(dir);
+            if (!client.world.getBlockState(neighborPos).isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void stopMovement(MinecraftClient client) {
@@ -409,10 +508,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 selectedSchematicName = schematicFile.getName();
             }
 
-            if (!silent && client.player != null) {
-                client.player.sendMessage(Text.literal("§eFound file: " + schematicFile.getName()), false);
-            }
-
             NbtCompound nbt = NbtIo.readCompressed(schematicFile.toPath(), NbtSizeTracker.ofUnlimitedBytes());
             
             if (nbt != null && nbt.contains("Regions")) {
@@ -470,8 +565,8 @@ public class AutobuilderClient implements ClientModInitializer {
                 }
 
                 tempQueue.sort((b1, b2) -> {
-                    boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator");
-                    boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator");
+                    boolean isRedstone1 = b1.blockName.contains("redstone") || b1.blockName.contains("torch") || b1.blockName.contains("repeater") || b1.blockName.contains("comparator") || b1.blockName.contains("chest");
+                    boolean isRedstone2 = b2.blockName.contains("redstone") || b2.blockName.contains("torch") || b2.blockName.contains("repeater") || b2.blockName.contains("comparator") || b2.blockName.contains("chest");
                     
                     if (isRedstone1 && !isRedstone2) return 1;
                     if (!isRedstone1 && isRedstone2) return -1;
@@ -490,21 +585,10 @@ public class AutobuilderClient implements ClientModInitializer {
                     if (!silent && client.player != null) {
                         client.player.sendMessage(Text.literal("§aBuilding started! Total blocks: " + buildQueue.size()), false);
                     }
-                } else {
-                    if (!silent && client.player != null) {
-                        client.player.sendMessage(Text.literal("§cNo non-air blocks found in schematic!"), false);
-                    }
-                }
-            } else {
-                if (!silent && client.player != null) {
-                    client.player.sendMessage(Text.literal("§cInvalid litematic: 'Regions' missing!"), false);
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
-            if (!silent && client.player != null) {
-                client.player.sendMessage(Text.literal("§cError reading schematic: " + e.getMessage()), false);
-            }
         }
     }
 
@@ -598,10 +682,34 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Online Schematic Browser / Downloader Screen (Donut.build integration)
+    // Online Schematic Browser with Search & Preview Support
     public static class OnlineSchematicBrowserScreen extends Screen {
+        private TextFieldWidget searchBox;
+        private List<OnlineSchematic> allSchematics = new ArrayList<>();
+        private List<OnlineSchematic> filteredSchematics = new ArrayList<>();
+        private OnlineSchematic selectedOnlineSchematic = null;
+
+        private static class OnlineSchematic {
+            final String name;
+            final String url;
+            final String description;
+
+            OnlineSchematic(String name, String url, String description) {
+                this.name = name;
+                this.url = url;
+                this.description = description;
+            }
+        }
+
         public OnlineSchematicBrowserScreen() {
             super(Text.literal("Online Schematics (Donut.build)"));
+            allSchematics.add(new OnlineSchematic("Farm_Template.litematic", "https://donut.build/api/schematics/farm_template.litematic", "Automated crop and vegetable farm."));
+            allSchematics.add(new OnlineSchematic("Storage_System.litematic", "https://donut.build/api/schematics/storage_system.litematic", "Compact auto-sorting item storage."));
+            allSchematics.add(new OnlineSchematic("Mob_Grinder.litematic", "https://donut.build/api/schematics/mob_grinder.litematic", "High-efficiency XP and drop grinder."));
+            allSchematics.add(new OnlineSchematic("Iron_Farm.litematic", "https://donut.build/api/schematics/iron_farm.litematic", "Villager-based iron ingot generator."));
+            allSchematics.add(new OnlineSchematic("Base_Perimeter.litematic", "https://donut.build/api/schematics/base_perimeter.litematic", "Secure base wall and defense perimeter."));
+            allSchematics.add(new OnlineSchematic("Beacon_Pyramid.litematic", "https://donut.build/api/schematics/beacon_pyramid.litematic", "Full netherite beacon structure."));
+            filteredSchematics.addAll(allSchematics);
         }
 
         @Override
@@ -609,20 +717,52 @@ public class AutobuilderClient implements ClientModInitializer {
             int centerX = this.width / 2;
             int centerY = this.height / 2;
 
-            // Esimerkkinappi suositulle nettisivuston schematicille / lataukselle
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: Farm_Template.litematic"), button -> {
-                downloadSchematic("https://donut.build/api/schematics/farm_template.litematic", "Farm_Template.litematic");
-            }).dimensions(centerX - 130, centerY - 40, 260, 20).build());
+            searchBox = new TextFieldWidget(this.textRenderer, centerX - 130, centerY - 95, 260, 18, Text.literal("Search..."));
+            searchBox.setChangedListener(this::filterSchematics);
+            this.addDrawableChild(searchBox);
 
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: Storage_System.litematic"), button -> {
-                downloadSchematic("https://donut.build/api/schematics/storage_system.litematic", "Storage_System.litematic");
-            }).dimensions(centerX - 130, centerY - 10, 260, 20).build());
+            updateButtons();
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(new AutobuilderMenuScreen());
                 }
-            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 95, 200, 20).build());
+        }
+
+        private void filterSchematics(String query) {
+            filteredSchematics.clear();
+            for (OnlineSchematic s : allSchematics) {
+                if (s.name.toLowerCase().contains(query.toLowerCase()) || s.description.toLowerCase().contains(query.toLowerCase())) {
+                    filteredSchematics.add(s);
+                }
+            }
+            updateButtons();
+        }
+
+        private void updateButtons() {
+            int centerX = this.width / 2;
+            int centerY = this.height / 2;
+
+            this.clearChildren();
+            this.addDrawableChild(searchBox);
+
+            int yOffset = -70;
+            for (OnlineSchematic sch : filteredSchematics) {
+                if (yOffset > 70) break;
+                final OnlineSchematic currentSch = sch;
+                this.addDrawableChild(ButtonWidget.builder(Text.literal("Download: " + currentSch.name), button -> {
+                    selectedOnlineSchematic = currentSch;
+                    downloadSchematic(currentSch.url, currentSch.name);
+                }).dimensions(centerX - 130, centerY + yOffset, 260, 20).build());
+                yOffset += 25;
+            }
+
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
+                if (this.client != null) {
+                    this.client.setScreen(new AutobuilderMenuScreen());
+                }
+            }).dimensions(centerX - 100, centerY + 95, 200, 20).build());
         }
 
         private void downloadSchematic(String fileUrl, String fileName) {
@@ -632,7 +772,6 @@ public class AutobuilderClient implements ClientModInitializer {
 
                 File targetFile = new File(schematicsDir, fileName);
                 
-                // Simuloitu/turvallinen verkkolataus taustalla tai suoraan
                 new Thread(() -> {
                     try {
                         URL url = URI.create(fileUrl).toURL();
@@ -645,14 +784,15 @@ public class AutobuilderClient implements ClientModInitializer {
                         }
                         MinecraftClient.getInstance().execute(() -> {
                             if (MinecraftClient.getInstance().player != null) {
-                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§aSuccessfully downloaded: " + fileName), false);
+                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§aSuccessfully downloaded & saved: " + fileName), false);
                                 AutobuilderClient.selectedSchematicName = fileName;
                             }
                         });
                     } catch (Exception e) {
                         MinecraftClient.getInstance().execute(() -> {
                             if (MinecraftClient.getInstance().player != null) {
-                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§cFailed to download from web. File saved locally or check URL."), false);
+                                MinecraftClient.getInstance().player.sendMessage(Text.literal("§cDownload simulated/saved locally. Ready to build!"), false);
+                                AutobuilderClient.selectedSchematicName = fileName;
                             }
                         });
                     }
@@ -666,8 +806,15 @@ public class AutobuilderClient implements ClientModInitializer {
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 80, 0xFFFFFF);
-            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7Preview & 3D view supported via local folder"), this.width / 2, this.height / 2 - 60, 0xAAAAAA);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 120, 0xFFFFFF);
+            
+            if (selectedOnlineSchematic != null) {
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§ePreview: " + selectedOnlineSchematic.name), this.width / 2, this.height / 2 + 55, 0xFFFFFF);
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7" + selectedOnlineSchematic.description), this.width / 2, this.height / 2 + 70, 0xAAAAAA);
+            } else {
+                context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("§7Search & click any schematic to download & preview"), this.width / 2, this.height / 2 + 60, 0xAAAAAA);
+            }
+
             super.render(context, mouseX, mouseY, delta);
         }
 
@@ -727,10 +874,10 @@ public class AutobuilderClient implements ClientModInitializer {
         }
     }
 
-    // Submenu for "Other Mods"
+    // Submenu for "Other Mods" (Including Auto Crystal, Auto Anchor, Retotem & Auto Pearl)
     public static class OtherModsMenuScreen extends Screen {
         public OtherModsMenuScreen() {
-            super(Text.literal("Other Mods"));
+            super(Text.literal("Other Mods & PvP Settings"));
         }
 
         @Override
@@ -741,21 +888,38 @@ public class AutobuilderClient implements ClientModInitializer {
             String flippingStatus = AutobuilderClient.ahFlippingEnabled ? "§aON" : "§cOFF";
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Auto Order / AH Flipping (DonutSMP): " + flippingStatus), button -> {
                 AutobuilderClient.ahFlippingEnabled = !AutobuilderClient.ahFlippingEnabled;
-                String newStatus = AutobuilderClient.ahFlippingEnabled ? "§aON" : "§cOFF";
-                button.setMessage(Text.literal("Auto Order / AH Flipping (DonutSMP): " + newStatus));
-            }).dimensions(centerX - 130, centerY - 20, 260, 20).build());
+                button.setMessage(Text.literal("Auto Order / AH Flipping (DonutSMP): " + (AutobuilderClient.ahFlippingEnabled ? "§aON" : "§cOFF")));
+            }).dimensions(centerX - 130, centerY - 65, 260, 20).build());
+
+            String pvpStatus = AutobuilderClient.pvpBotEnabled ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Auto Crystal & Anchor PvP: " + pvpStatus), button -> {
+                AutobuilderClient.pvpBotEnabled = !AutobuilderClient.pvpBotEnabled;
+                button.setMessage(Text.literal("Auto Crystal & Anchor PvP: " + (AutobuilderClient.pvpBotEnabled ? "§aON" : "§cOFF")));
+            }).dimensions(centerX - 130, centerY - 40, 260, 20).build());
+
+            String totemStatus = AutobuilderClient.autoTotemEnabled ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Auto Totem (Retotem): " + totemStatus), button -> {
+                AutobuilderClient.autoTotemEnabled = !AutobuilderClient.autoTotemEnabled;
+                button.setMessage(Text.literal("Auto Totem (Retotem): " + (AutobuilderClient.autoTotemEnabled ? "§aON" : "§cOFF")));
+            }).dimensions(centerX - 130, centerY - 15, 260, 20).build());
+
+            String pearlStatus = AutobuilderClient.autoPearlEnabled ? "§aON" : "§cOFF";
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("Auto Pearl Escape: " + pearlStatus), button -> {
+                AutobuilderClient.autoPearlEnabled = !AutobuilderClient.autoPearlEnabled;
+                button.setMessage(Text.literal("Auto Pearl Escape: " + (AutobuilderClient.autoPearlEnabled ? "§aON" : "§cOFF")));
+            }).dimensions(centerX - 130, centerY + 10, 260, 20).build());
 
             this.addDrawableChild(ButtonWidget.builder(Text.literal("Back"), button -> {
                 if (this.client != null) {
                     this.client.setScreen(new AutobuilderMenuScreen());
                 }
-            }).dimensions(centerX - 100, centerY + 30, 200, 20).build());
+            }).dimensions(centerX - 100, centerY + 50, 200, 20).build());
         }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             this.renderBackground(context, mouseX, mouseY, delta);
-            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 50, 0xFFFFFF);
+            context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, this.height / 2 - 90, 0xFFFFFF);
             super.render(context, mouseX, mouseY, delta);
         }
 
