@@ -4,7 +4,7 @@ plugins {
 }
 
 repositories {
-    // Add repos here if needed
+    // Add repositories to retrieve artifacts from in here.
 }
 
 loom {
