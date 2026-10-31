@@ -31,6 +31,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameMode;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -107,7 +108,8 @@ public class AutobuilderClient implements ClientModInitializer {
                         for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
                             if (entry.getProfile().getId().equals(client.player.getGameProfile().getId())) continue;
                             
-                            if (entry.getGameMode() != null && entry.getGameMode().isSpectator()) {
+                            // Korjattu pelitilan tarkistus
+                            if (entry.getGameMode() == GameMode.SPECTATOR) {
                                 isBuilding = false;
                                 isPaused = false;
                                 client.player.sendMessage(Text.literal("§c[AutoBuilder Security] Spectator nearby! Leaving server..."), false);
@@ -189,7 +191,6 @@ public class AutobuilderClient implements ClientModInitializer {
                 Vec3d targetVec = Vec3d.ofCenter(blockData.pos);
                 double distance = client.player.getPos().distanceTo(targetVec);
 
-                // Prevent placing blocks inside the player's own bounding box / head
                 if (client.player.getBoundingBox().intersects(new Box(blockData.pos))) {
                     client.options.forwardKey.setPressed(true);
                     client.options.jumpKey.setPressed(true);
