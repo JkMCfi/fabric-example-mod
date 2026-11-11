@@ -3,11 +3,11 @@ plugins {
     id 'maven-publish'
 }
 
-version = project.mod_version
-group = project.maven_group
+version = project.version
+group = project.group
 
 base {
-    archivesName = project.archives_base_name
+    archivesName = 'orbit'
 }
 
 loom {
@@ -30,9 +30,8 @@ dependencies {
 
 processResources {
     inputs.property "version", project.version
-
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
     }
 }
 
@@ -48,14 +47,14 @@ java {
 }
 
 jar {
-    from("LICENSE") {
-        rename { "${it}_${project.archives_base_name}" }
+    from('LICENSE') {
+        rename { "${it}_orbit" }
     }
 }
 
 publishing {
     publications {
-        create("mavenJava", MavenPublication) {
+        create('mavenJava', MavenPublication) {
             from components.java
         }
     }
