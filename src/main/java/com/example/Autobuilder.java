@@ -1,15 +1,2 @@
-package com.example;
-
-import net.fabricmc.api.ModInitializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class Autobuilder implements ModInitializer {
-    public static final String MOD_ID = "autobuilder";
-    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-
-    @Override
-    public void onInitialize() {
-        LOGGER.info("AutoBuilder mod initialized!");
-    }
-}
+// ORBIT Phase 1 replaced the former Autobuilder implementation. This legacy
+// source is intentionally empty so it no longer compiles into the ORBIT mod.

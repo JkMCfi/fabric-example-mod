@@ -1,26 +1,21 @@
 {
   "schemaVersion": 1,
-  "id": "autobuilder",
+  "id": "orbit",
   "version": "${version}",
-  "name": "AutoBuilder",
-  "description": "Custom Fabric Mod",
-  "authors": [
-    "JkMCfi"
-  ],
+  "name": "ORBIT",
+  "description": "Music. Space. Atmosphere. A client-side music and visual atmosphere mod.",
+  "authors": ["ORBIT contributors"],
   "contact": {},
   "license": "CC0-1.0",
-  "icon": "assets/autobuilder/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
-    "main": [
-      "com.example.Autobuilder"
-    ]
+    "main": ["dev.orbit.OrbitMod"],
+    "client": ["dev.orbit.OrbitClient"]
   },
-  "mixins": [],
   "depends": {
-    "fabricloader": ">=0.15.7",
-    "minecraft": "~1.20.4",
-    "java": ">=17",
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
     "fabric-api": "*"
   }
 }
