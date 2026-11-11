@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "autobuilder",
+  "version": "${version}",
+  "name": "AutoBuilder",
+  "description": "Custom Fabric Mod",
+  "authors": [
+    "JkMCfi"
+  ],
+  "contact": {},
+  "license": "CC0-1.0",
+  "icon": "assets/autobuilder/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.example.Autobuilder"
+    ]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=0.15.7",
+    "minecraft": "~1.20.4",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
