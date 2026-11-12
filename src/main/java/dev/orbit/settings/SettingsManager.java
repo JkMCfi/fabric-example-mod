@@ -58,7 +58,7 @@ public final class SettingsManager {
         public float volume = 0.8F;
         public boolean hudEnabled = true;
         public int guiScale = 2;
-        public String theme = "ORBIT Purple";
+        public String theme = "Default Orbit Purple";
         public boolean shuffle = false;
         public boolean repeat = false;
     }
