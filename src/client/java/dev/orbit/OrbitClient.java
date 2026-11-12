@@ -15,7 +15,7 @@ public class OrbitClient implements ClientModInitializer {
         Identifier.fromNamespaceAndPath(OrbitMod.MOD_ID, "main")
     );
     private static final KeyMapping OPEN_ORBIT = KeyBindingHelper.registerKeyBinding(
-        new KeyMapping("key.orbit.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, ORBIT_CATEGORY)
+        new KeyMapping("key.orbit.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, ORBIT_CATEGORY)
     );
 
     @Override
