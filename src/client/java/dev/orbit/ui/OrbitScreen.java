@@ -72,17 +72,21 @@ public class OrbitScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
         OrbitTheme.Palette palette = OrbitTheme.current();
-        graphics.blurBeforeThisStratum();
         graphics.fillGradient(
             0, 0, this.width, this.height,
-            OrbitRender.alpha(palette.background(), 0.88F),
-            OrbitRender.alpha(palette.secondaryBackground(), 0.95F)
+            OrbitRender.alpha(palette.background(), 0.62F),
+            OrbitRender.alpha(palette.secondaryBackground(), 0.78F)
         );
 
         int panelX = 20;
         int panelY = 68;
         int panelWidth = Math.max(100, this.width - 40);
         int panelHeight = Math.max(100, this.height - 126);
+        graphics.fillGradient(
+            0, 0, this.width, 2,
+            OrbitRender.alpha(palette.primary(), 0.0F),
+            OrbitRender.alpha(palette.primary(), 0.55F)
+        );
         drawMainPanel(graphics, panelX, panelY, panelWidth, panelHeight, mouseX, mouseY, palette);
 
         graphics.drawString(this.font, "MUSIC & ATMOSPHERE", 22, 56, palette.textMuted());
@@ -112,8 +116,10 @@ public class OrbitScreen extends Screen {
         graphics.pose().translate(x + width / 2.0F, y + height / 2.0F);
         graphics.pose().scale(cardScale, cardScale);
         graphics.pose().translate(-(x + width / 2.0F), -(y + height / 2.0F));
-        OrbitRender.roundedRect(graphics, x, y, width, height, 16, palette.panel());
-        OrbitRender.roundedRect(graphics, x + 1, y + 1, width - 2, 1, 1, OrbitRender.alpha(palette.primary(), 0.5F));
+        OrbitRender.roundedRect(graphics, x + 2, y + 4, width, height, 17, OrbitRender.alpha(0xFF000000, 0.34F));
+        OrbitRender.roundedRect(graphics, x, y, width, height, 16, OrbitRender.alpha(palette.border(), 0.68F));
+        OrbitRender.roundedRect(graphics, x + 1, y + 1, width - 2, height - 2, 15, palette.panel());
+        OrbitRender.roundedRect(graphics, x + 14, y + 1, Math.max(1, width - 28), 1, 1, OrbitRender.alpha(palette.primary(), 0.42F));
         graphics.pose().popMatrix();
 
         if (width >= 600) {
