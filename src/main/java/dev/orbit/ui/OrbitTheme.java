@@ -27,7 +27,22 @@ public final class OrbitTheme {
     public static Palette cycle() {
         Palette current = current();
         int nextIndex = (PALETTES.indexOf(current) + 1) % PALETTES.size();
-        Palette next = PALETTES.get(nextIndex);
+        return select(nextIndex);
+    }
+
+    public static int paletteCount() {
+        return PALETTES.size();
+    }
+
+    public static Palette paletteAt(int index) {
+        return PALETTES.get(index);
+    }
+
+    public static Palette select(int index) {
+        if (index < 0 || index >= PALETTES.size()) {
+            throw new IllegalArgumentException("Invalid Orbit theme index: " + index);
+        }
+        Palette next = PALETTES.get(index);
         SettingsManager.get().getSettings().theme = next.name();
         SettingsManager.get().save();
         return next;
