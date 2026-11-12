@@ -23,15 +23,15 @@ import java.util.Locale;
 public final class OrbitScreen extends Screen {
     private static final int CANVAS_WIDTH = 1280;
     private static final int CANVAS_HEIGHT = 720;
-    private static final int WINDOW_X = 80;
+    private static final int WINDOW_X = 370;
     private static final int WINDOW_Y = 60;
-    private static final int WINDOW_WIDTH = 1120;
+    private static final int WINDOW_WIDTH = 870;
     private static final int WINDOW_HEIGHT = 600;
-    private static final int SIDEBAR_WIDTH = 240;
-    private static final int CONTENT_X = 350;
-    private static final int CONTENT_WIDTH = 828;
+    private static final int SIDEBAR_WIDTH = 210;
+    private static final int CONTENT_X = 604;
+    private static final int CONTENT_WIDTH = 612;
     private static final Tab[] TABS = {
-        Tab.OVERVIEW, Tab.SKIES, Tab.LYRICS, Tab.STYLES,
+        Tab.OVERVIEW, Tab.SKIES, Tab.LYRICS, Tab.STYLES, Tab.COMMUNITY,
         Tab.HUD, Tab.PERFORMANCE, Tab.SETTINGS, Tab.INFORMATION
     };
 
@@ -60,12 +60,12 @@ public final class OrbitScreen extends Screen {
         offsetX = (this.width - CANVAS_WIDTH * scaleFactor) / 2.0F;
         offsetY = (this.height - CANVAS_HEIGHT * scaleFactor) / 2.0F;
 
-        addButton(98, 82, 44, 34, ButtonStyle.BRAND, "ob", "OB", "", null, this::onLogoClicked, null);
-        addButton(1162, 80, 28, 28, ButtonStyle.CONTROL, "close", "", "", null, this::onClose, null);
+        addButton(390, 82, 44, 34, ButtonStyle.BRAND, "ob", "OB", "", null, this::onLogoClicked, null);
+        addButton(1176, 80, 28, 28, ButtonStyle.CONTROL, "close", "", "", null, this::onClose, null);
 
         for (int index = 0; index < TABS.length; index++) {
             Tab tab = TABS[index];
-            addButton(100, 146 + index * 38, 200, 32, ButtonStyle.NAVIGATION,
+            addButton(390, 146 + index * 38, 170, 32, ButtonStyle.NAVIGATION,
                 tab.icon, tab.title, "", tab, () -> activeTab = tab, null);
         }
 
@@ -83,14 +83,14 @@ public final class OrbitScreen extends Screen {
             int column = index % 3;
             int row = index / 3;
             Tab tab = featureTabs[index];
-            addButton(CONTENT_X + column * 278, 276 + row * 146, 266, 134, ButtonStyle.FEATURE,
+            addButton(CONTENT_X + column * 200, 276 + row * 114, 190, 104, ButtonStyle.FEATURE,
                 tab.icon, featureLabels[index], featureDetails[index], tab, () -> activeTab = tab, Tab.OVERVIEW);
         }
 
         SkyType[] skies = SkyType.values();
         for (int index = 0; index < skies.length; index++) {
             SkyType sky = skies[index];
-            addButton(CONTENT_X + index % 4 * 207, 164 + index / 4 * 58, 197, 50, ButtonStyle.SKY,
+            addButton(CONTENT_X + index % 4 * 153, 164 + index / 4 * 58, 147, 50, ButtonStyle.SKY,
                 "star", sky.name().replace('_', ' '), "", null, () -> selectSky(sky), Tab.SKIES);
         }
 
@@ -98,37 +98,43 @@ public final class OrbitScreen extends Screen {
             int paletteIndex = index;
             int column = index % 2;
             int row = index / 2;
-            addButton(CONTENT_X + column * 258, 180 + row * 68, 246, 56, ButtonStyle.ACTION,
+            addButton(CONTENT_X + column * 270, 180 + row * 68, 258, 56, ButtonStyle.ACTION,
                 "wand", OrbitTheme.paletteAt(index).name(), "Apply this accent palette",
                 null, () -> selectTheme(paletteIndex), Tab.STYLES);
         }
 
         for (int index = 0; index < PerformancePreset.values().length; index++) {
             PerformancePreset preset = PerformancePreset.values()[index];
-            addButton(CONTENT_X + index * 158, 190, 148, 48, ButtonStyle.PILL,
+            addButton(CONTENT_X + index * 118, 190, 110, 48, ButtonStyle.PILL,
                 "bolt", titleCase(preset.name()), "", null, () -> selectPerformance(preset), Tab.PERFORMANCE);
         }
 
-        addButton(CONTENT_X, 188, 392, 62, ButtonStyle.ACTION, "monitor", "HUD widget",
+        addButton(CONTENT_X, 188, 294, 62, ButtonStyle.ACTION, "monitor", "HUD widget",
             "Show or hide the in-game track display", null, this::toggleHud, Tab.HUD);
-        addButton(CONTENT_X + 408, 188, 392, 62, ButtonStyle.ACTION, "loop", "Repeat",
+        addButton(CONTENT_X + 306, 188, 294, 62, ButtonStyle.ACTION, "loop", "Repeat",
             "Repeat the current playlist", null, this::toggleRepeat, Tab.HUD);
-        addButton(CONTENT_X, 188, 392, 62, ButtonStyle.ACTION, "shuffle", "Shuffle",
+        addButton(CONTENT_X, 188, 294, 62, ButtonStyle.ACTION, "shuffle", "Shuffle",
             "Mix the local track queue", null, this::toggleShuffle, Tab.SETTINGS);
-        addButton(CONTENT_X + 408, 188, 392, 62, ButtonStyle.ACTION, "loop", "Repeat",
+        addButton(CONTENT_X + 306, 188, 294, 62, ButtonStyle.ACTION, "loop", "Repeat",
             "Repeat the current playlist", null, this::toggleRepeat, Tab.SETTINGS);
-        addButton(CONTENT_X, 270, 392, 62, ButtonStyle.ACTION, "palette", "Color theme",
+        addButton(CONTENT_X, 270, 294, 62, ButtonStyle.ACTION, "palette", "Color theme",
             "Choose a saved accent palette", null, () -> activeTab = Tab.STYLES, Tab.SETTINGS);
-        addButton(CONTENT_X + 408, 270, 392, 62, ButtonStyle.ACTION, "gear", "Open controls",
+        addButton(CONTENT_X + 306, 270, 294, 62, ButtonStyle.ACTION, "gear", "Open controls",
             "Use O to open Orbit; Escape closes it", null, () -> OrbitToast.show("Open Orbit with O"), Tab.SETTINGS);
 
-        addButton(102, 608, 30, 30, ButtonStyle.CONTROL, "prev", "", "",
+        addButton(1080, 546, 28, 28, ButtonStyle.CONTROL, "prev", "", "",
             null, () -> showPartyControlMessage("Previous track"), null);
-        addButton(145, 605, 36, 36, ButtonStyle.CONTROL, "play", "", "",
+        addButton(1116, 542, 36, 36, ButtonStyle.CONTROL, "play", "", "",
             null, this::togglePartyPlayback, null);
-        addButton(194, 608, 30, 30, ButtonStyle.CONTROL, "next", "", "",
+        addButton(1160, 546, 28, 28, ButtonStyle.CONTROL, "next", "", "",
             null, () -> showPartyControlMessage("Next track"), null);
-        addButton(238, 608, 30, 30, ButtonStyle.CONTROL, "loop", "", "",
+        addButton(52, 620, 34, 30, ButtonStyle.CONTROL, "prev", "", "",
+            null, () -> showPartyControlMessage("Previous track"), null);
+        addButton(96, 617, 36, 36, ButtonStyle.CONTROL, "play", "", "",
+            null, this::togglePartyPlayback, null);
+        addButton(142, 620, 34, 30, ButtonStyle.CONTROL, "next", "", "",
+            null, () -> showPartyControlMessage("Next track"), null);
+        addButton(188, 620, 34, 30, ButtonStyle.CONTROL, "loop", "", "",
             null, this::toggleRepeat, null);
     }
 
@@ -248,41 +254,45 @@ public final class OrbitScreen extends Screen {
             OrbitRender.alpha(0xFF120F1A, 0.95F));
         graphics.fill(WINDOW_X + SIDEBAR_WIDTH, WINDOW_Y + 24, WINDOW_X + SIDEBAR_WIDTH + 1,
             WINDOW_Y + WINDOW_HEIGHT - 24, OrbitRender.alpha(0xFFFFFFFF, 0.08F));
+        drawFloatingPlayer(graphics, palette);
         drawBrand(graphics, palette);
-        drawSidebarPlayer(graphics, palette);
         drawHeader(graphics, palette);
         drawFooter(graphics, palette);
+        drawMiniPlayer(graphics, palette);
     }
 
     private void drawBrand(GuiGraphics graphics, OrbitTheme.Palette palette) {
-        OrbitRender.roundedRect(graphics, 100, 82, 38, 38, 11, OrbitRender.alpha(palette.primary(), 0.25F));
-        OrbitRender.roundedRect(graphics, 103, 85, 32, 32, 9, palette.secondary());
-        graphics.drawCenteredString(this.font, "OB", 119, 96, 0xFFFFFFFF);
-        graphics.drawString(this.font, "Orbit", 148, 87, 0xFFFFFFFF);
-        graphics.drawString(this.font, "More than just a mod.", 148, 104, 0x8A8299);
-        graphics.fill(100, 130, 300, 131, OrbitRender.alpha(0xFFFFFFFF, 0.08F));
+        OrbitRender.roundedRect(graphics, 390, 82, 38, 38, 11, OrbitRender.alpha(palette.primary(), 0.25F));
+        OrbitRender.roundedRect(graphics, 393, 85, 32, 32, 9, palette.secondary());
+        graphics.drawCenteredString(this.font, "OB", 409, 96, 0xFFFFFFFF);
+        graphics.drawString(this.font, "Orbit", 438, 87, 0xFFFFFFFF);
+        graphics.drawString(this.font, "More than just a mod.", 438, 104, 0x8A8299);
+        graphics.fill(390, 130, 560, 131, OrbitRender.alpha(0xFFFFFFFF, 0.08F));
     }
 
-    private void drawSidebarPlayer(GuiGraphics graphics, OrbitTheme.Palette palette) {
+    private void drawFloatingPlayer(GuiGraphics graphics, OrbitTheme.Palette palette) {
         PartyStatePayload party = PartySyncClient.getLatestState();
         boolean playing = party != null && party.playbackState() == PartySync.PLAYING;
-        OrbitRender.roundedRect(graphics, 96, 476, 208, 166, 13, OrbitRender.alpha(0xFFFFFFFF, 0.1F));
-        OrbitRender.roundedRect(graphics, 97, 477, 206, 164, 12, 0xFF1A1624);
-        graphics.drawString(this.font, "NOW PLAYING", 106, 489, palette.textMuted());
-        drawVinyl(graphics, 176, 526, 24, playing, palette);
-        drawAlbumArt(graphics, 106, 502, 48, palette, pointerX, pointerY);
-        graphics.drawString(this.font, trackTitle(party), 106, 556, palette.textMain());
-        graphics.drawString(this.font, party == null ? "No track selected" : "Party: " + party.partyName(),
-            106, 572, palette.textMuted());
+        graphics.drawString(this.font, "ORBIT  /  NOW PLAYING", 54, 92, palette.textMuted());
+        drawVinyl(graphics, 245, 208, 65, playing, palette);
+        drawAlbumArt(graphics, 68, 138, 140, palette, pointerX, pointerY);
+        graphics.drawString(this.font, trackTitle(party), 68, 300, palette.textMain());
+        graphics.drawString(this.font, party == null ? "Your local listening space" : "Party: " + party.partyName(),
+            68, 321, palette.textSecondary());
+        graphics.drawString(this.font, "SYNCED LYRICS", 68, 361, palette.primary());
+        graphics.drawString(this.font, "No synced lyrics loaded", 68, 384, palette.textSecondary());
+        graphics.drawString(this.font, "Load an .lrc file for live lines", 68, 405, OrbitRender.alpha(0xFFFFFFFF, 0.42F));
+        graphics.drawString(this.font, "Lyrics will appear here", 68, 426, OrbitRender.alpha(0xFFFFFFFF, 0.42F));
+        graphics.drawString(this.font, "AUDIO PREVIEW", 68, 566, palette.textMuted());
         drawVisualizer(graphics, playing, palette);
     }
 
     private void drawHeader(GuiGraphics graphics, OrbitTheme.Palette palette) {
         graphics.drawString(this.font, activeTab.title, CONTENT_X, 82, 0xFFFFFFFF);
         graphics.drawString(this.font, headerSubtitle(), CONTENT_X, 101, 0xFF8A8299);
-        graphics.fill(1060, 82, 1062, 110, palette.primary());
-        graphics.drawString(this.font, "Your game.", 1074, 82, palette.textSecondary());
-        graphics.drawString(this.font, "Our extension.", 1074, 97, palette.textMuted());
+        graphics.fill(1044, 82, 1046, 110, palette.primary());
+        graphics.drawString(this.font, "Your game.", 1058, 82, palette.textSecondary());
+        graphics.drawString(this.font, "Our extension.", 1058, 97, palette.textMuted());
     }
 
     private void drawPage(GuiGraphics graphics, OrbitTheme.Palette palette) {
@@ -291,6 +301,7 @@ public final class OrbitScreen extends Screen {
             case SKIES -> drawSkies(graphics, palette);
             case LYRICS -> drawLyrics(graphics, palette);
             case STYLES -> drawStyles(graphics, palette);
+            case COMMUNITY -> drawCommunity(graphics, palette);
             case HUD -> drawHud(graphics, palette);
             case PERFORMANCE -> drawPerformance(graphics, palette);
             case SETTINGS -> drawSettings(graphics, palette);
@@ -315,7 +326,7 @@ public final class OrbitScreen extends Screen {
         graphics.drawString(this.font, "Orbit", x + 82, y + 31, 0xFFFFFFFF);
         graphics.drawString(this.font, "More than just a mod.", x + 82, y + 51, palette.textSecondary());
         graphics.drawString(this.font, "Music, skies and atmosphere in one place.", x + 24, y + 87, palette.textMuted());
-        drawSaturn(graphics, x + CONTENT_WIDTH - 92, y + 60, palette);
+        drawSaturn(graphics, x + CONTENT_WIDTH - 82, y + 60, palette);
         graphics.drawString(this.font, "QUICK ACCESS", CONTENT_X, 263, palette.textMuted());
     }
 
@@ -343,6 +354,16 @@ public final class OrbitScreen extends Screen {
         graphics.drawString(this.font, "Accent themes", CONTENT_X, 140, palette.textMain());
         graphics.drawString(this.font, "Select a palette to update the entire Orbit interface.", CONTENT_X, 159, palette.textMuted());
         graphics.drawString(this.font, "CURRENT  /  " + palette.name(), CONTENT_X, 484, palette.primary());
+    }
+
+    private void drawCommunity(GuiGraphics graphics, OrbitTheme.Palette palette) {
+        drawInfoCard(graphics, CONTENT_X, 150, CONTENT_WIDTH, 300, palette);
+        graphics.drawCenteredString(this.font, "Community catalog is not connected", CONTENT_X + CONTENT_WIDTH / 2, 222,
+            palette.textMain());
+        graphics.drawCenteredString(this.font, "A catalog endpoint and API contract are required before downloads or uploads can be enabled.",
+            CONTENT_X + CONTENT_WIDTH / 2, 253, palette.textSecondary());
+        graphics.drawCenteredString(this.font, "No presets are downloaded from an unverified source.", CONTENT_X + CONTENT_WIDTH / 2,
+            282, palette.textMuted());
     }
 
     private void drawHud(GuiGraphics graphics, OrbitTheme.Palette palette) {
@@ -391,11 +412,29 @@ public final class OrbitScreen extends Screen {
     }
 
     private void drawFooter(GuiGraphics graphics, OrbitTheme.Palette palette) {
-        graphics.fill(100, 642, 300, 643, OrbitRender.alpha(0xFFFFFFFF, 0.08F));
-        graphics.drawString(this.font, "Orbit  v1.0.0", 100, 650, palette.textMuted());
-        graphics.fill(CONTENT_X + 118, 635, CONTENT_X + 320, 636, OrbitRender.alpha(palette.border(), 0.55F));
-        graphics.drawCenteredString(this.font, "discord.gg/orbitmod", CONTENT_X + CONTENT_WIDTH / 2, 629, palette.textMuted());
-        graphics.fill(CONTENT_X + 508, 635, CONTENT_X + CONTENT_WIDTH - 8, 636, OrbitRender.alpha(palette.border(), 0.55F));
+        graphics.fill(390, 642, 560, 643, OrbitRender.alpha(0xFFFFFFFF, 0.08F));
+        graphics.drawString(this.font, "Orbit  v1.0.0", 390, 650, palette.textMuted());
+        int center = CONTENT_X + CONTENT_WIDTH / 2;
+        graphics.fill(CONTENT_X + 32, 635, center - 80, 636, OrbitRender.alpha(palette.border(), 0.55F));
+        graphics.drawCenteredString(this.font, "discord.gg/orbitmod", center, 629, palette.textMuted());
+        graphics.fill(center + 80, 635, CONTENT_X + CONTENT_WIDTH - 32, 636, OrbitRender.alpha(palette.border(), 0.55F));
+    }
+
+    private void drawMiniPlayer(GuiGraphics graphics, OrbitTheme.Palette palette) {
+        PartyStatePayload party = PartySyncClient.getLatestState();
+        graphics.drawString(this.font, "Now playing", CONTENT_X, 508, palette.textMuted());
+        OrbitRender.roundedRect(graphics, CONTENT_X, 529, CONTENT_WIDTH, 72, 12, 0x26FFFFFF);
+        OrbitRender.roundedRect(graphics, CONTENT_X + 1, 530, CONTENT_WIDTH - 2, 70, 11, 0xFF1A1624);
+        drawAlbumArt(graphics, CONTENT_X + 12, 541, 44, palette, pointerX, pointerY);
+        graphics.drawString(this.font, trackTitle(party), CONTENT_X + 68, 540, 0xFFFFFFFF);
+        graphics.drawString(this.font, party == null ? "Orbit player ready" : "Party: " + party.partyName(),
+            CONTENT_X + 68, 557, palette.textMuted());
+        graphics.drawString(this.font, party == null ? "No synced track" : playbackLabel(party),
+            CONTENT_X + 68, 578, party != null && party.playbackState() == PartySync.PLAYING ? palette.success() : palette.textMuted());
+        graphics.drawString(this.font, party == null ? "--:--" : formatTime(PartySyncClient.getEstimatedPositionMillis()),
+            CONTENT_X + 300, 557, palette.textMuted());
+        OrbitRender.roundedRect(graphics, CONTENT_X + 12, 596, CONTENT_WIDTH - 24, 2, 1,
+            OrbitRender.alpha(palette.primary(), 0.55F));
     }
 
     private void drawAlbumArt(GuiGraphics graphics, int x, int y, int size, OrbitTheme.Palette palette, int mouseX, int mouseY) {
@@ -428,7 +467,7 @@ public final class OrbitScreen extends Screen {
         }
         OrbitRender.circle(graphics, centerX, centerY, Math.max(4, radius / 3), palette.secondary());
         OrbitRender.circle(graphics, centerX, centerY, 2, palette.lavender());
-        double angle = System.nanoTime() / (playing ? 180_000_000.0 : 1_500_000_000.0);
+        double angle = System.nanoTime() / (playing ? 289_372_500.0 : 1_500_000_000.0);
         OrbitRender.circle(graphics, centerX + (int) Math.round(Math.cos(angle) * radius * 0.72),
             centerY + (int) Math.round(Math.sin(angle) * radius * 0.72), 2, palette.primary());
     }
@@ -466,7 +505,7 @@ public final class OrbitScreen extends Screen {
         for (int bar = 0; bar < 24; bar++) {
             float wave = (float) (Math.sin(time * (playing ? 0.000000008 : 0.000000002) + bar * 0.7) * 0.5 + 0.5);
             int height = 3 + Math.round(wave * (playing ? 15 : 5));
-            OrbitRender.roundedRect(graphics, 106 + bar * 7, 600 - height, 4, height, 2,
+            OrbitRender.roundedRect(graphics, 58 + bar * 9, 584 - height, 5, height, 2,
                 OrbitRender.alpha(palette.lavender(), playing ? 0.9F : 0.45F));
         }
     }
@@ -508,6 +547,15 @@ public final class OrbitScreen extends Screen {
 
     private String trackTitle(PartyStatePayload party) {
         return party == null || party.trackId().isEmpty() ? "Nothing playing" : party.trackId();
+    }
+
+    private String playbackLabel(PartyStatePayload state) {
+        return switch (state.playbackState()) {
+            case PartySync.PLAYING -> "Party synced";
+            case PartySync.PAUSED -> "Party paused";
+            case PartySync.STOPPED -> "Party stopped";
+            default -> "Party idle";
+        };
     }
 
     private String headerSubtitle() {
@@ -602,6 +650,7 @@ public final class OrbitScreen extends Screen {
         SKIES("Skies", "Skies", "Choose a world atmosphere.", "moon"),
         LYRICS("Lyrics", "Lyrics", "Follow synchronized lyrics.", "note"),
         STYLES("Styles", "Styles", "Make Orbit feel like yours.", "wand"),
+        COMMUNITY("Community", "Community", "Explore shared Orbit presets.", "globe"),
         HUD("HUD", "HUD", "Customize your in-game player widget.", "monitor"),
         PERFORMANCE("Performance", "Performance", "Balance visual effects and frame rate.", "bolt"),
         SETTINGS("Settings", "Settings", "Manage playback and interface preferences.", "gear"),
@@ -914,6 +963,11 @@ public final class OrbitScreen extends Screen {
                 OrbitRender.circle(graphics, centerX - 3, centerY - 3, 3, color);
                 OrbitRender.circle(graphics, centerX + 4, centerY - 2, 3, 0xFF37B8FF);
                 OrbitRender.circle(graphics, centerX - 3, centerY + 4, 3, 0xFF42D98A);
+            }
+            case "globe" -> {
+                drawCircleOutline(graphics, centerX, centerY, 8, color);
+                graphics.fill(centerX - 7, centerY, centerX + 8, centerY + 1, color);
+                graphics.fill(centerX, centerY - 7, centerX + 1, centerY + 8, color);
             }
             case "ob" -> graphics.drawCenteredString(this.font, "OB", centerX, centerY - 4, color);
             default -> OrbitRender.circle(graphics, centerX, centerY, 5, color);
