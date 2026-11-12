@@ -1,0 +1,24 @@
+package dev.orbit.skies;
+
+public enum SkyType {
+    SATURN,
+    GALAXY,
+    NORTHERN_LIGHTS,
+    SOLAR_ECLIPSE,
+    END_BEAMS,
+    CHERRY_BLOSSOM,
+    UNDERWATER,
+    NEON_HORIZON,
+    BLOOD_MOON,
+    STARRY_NIGHT,
+    DEEP_SPACE,
+    PURPLE_NEBULA,
+    METEOR_SHOWER,
+    BLUE_MOON,
+    SOLAR_STORM,
+    COSMIC_DUST,
+    AURORA_NIGHT,
+    LUNAR_ECLIPSE,
+    GALACTIC_RIFT,
+    ORBIT_ORIGINAL
+}
