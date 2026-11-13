@@ -25,13 +25,13 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build mod
-        run: ./gradlew clean build
+      - name: Compile and package the mod
+        run: ./gradlew clean compileJava compileClientJava remapJar
 
-      - name: Upload mod jar artifact
+      - name: Upload remapped mod jar artifact
         uses: actions/upload-artifact@v4
         with:
           name: orbit-mod-jar
-          path: build/libs/*.jar
+          path: build/libs/orbit-1.0.0.jar
           if-no-files-found: error
           retention-days: 30
