@@ -1,28 +1,19 @@
 {
   "schemaVersion": 1,
-  "id": "autobuilder",
+  "id": "stellar",
   "version": "${version}",
-  "name": "AutoBuilder",
-  "description": "Custom Fabric Mod",
-  "authors": [
-    "JkMCfi"
-  ],
-  "contact": {},
+  "name": "Stellar",
+  "description": "A Spotify-powered music and lyrics companion with a Valence-inspired glass UI.",
+  "authors": ["JkMCfi"],
+  "contact": {"sources": "https://github.com/JkMCfi/fabric-example-mod"},
   "license": "CC0-1.0",
-  "icon": "assets/autobuilder/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
-    "main": [
-      "com.example.Autobuilder"
-    ],
-    "client": [
-      "com.example.AutobuilderClient"
-    ]
+    "client": ["dev.stellar.StellarClient"]
   },
-  "mixins": [],
   "depends": {
-    "fabricloader": ">=0.15.7",
-    "minecraft": ">=1.21",
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
     "java": ">=21",
     "fabric-api": "*"
   }
