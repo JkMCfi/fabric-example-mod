@@ -62,6 +62,11 @@ public final class StellarScreen extends Screen {
         round(context, 22, 38, 315, 640, 18, 0xEE100E16); round(context, 28, 44, 303, 628, 14, 0xFF15121B);
         SpotifyService.Track track=music.track();
         round(context, 47, 60, 140, 140, 12, 0xFF49366E); text(context, "✦", 91, 100, 0xFFFFFFFF); text(context, "STELLAR", 74, 128, 0xFFE7D8FF);
+        // Spotify album artwork is fetched asynchronously and drawn once its dynamic texture is ready.
+        var albumArt = AlbumArtCache.get(track.imageUrl());
+        if (albumArt != null) {
+            context.drawTexture(albumArt, sx(47), sy(60), 0.0f, 0.0f, ss(140), ss(140), ss(140), ss(140));
+        }
         round(context, 169, 72, 87, 116, 50, 0xFF08080C);
         for (int i=0;i<5;i++) round(context, 179+i*3, 83+i*3, 67-i*6, 94-i*6, 32, 0xFF17151C);
         round(context, 201, 121, 24, 24, 12, 0xFF7552A9);
@@ -96,7 +101,9 @@ public final class StellarScreen extends Screen {
         for(int i=0;i<6;i++){int x=586+(i%3)*214,y=233+(i/3)*104; round(c,x,y,202,91,9,0xFF201D28); round(c,x+14,y+12,18,18,6,PURPLE);
             text(c,"✧",x+19,y+16,0xFFFFFFFF); text(c,FEATURES[i],x+41,y+15,0xFFFFFFFF); text(c,descriptions[i],x+1,y+46,0xFFAAA4B4); text(c,"↗",x+177,y+69,0xFFB8A8D8); }
         text(c,"Now playing",575,452,0xFFAAA4B4); round(c,575,470,650,71,10,0xFF201D28);
-        round(c,588,480,48,48,7,0xFF51426D); text(c,"♫",602,494,0xFFFFFFFF); text(c,track.title(),646,480,0xFFFFFFFF); text(c,track.artist(),646,496,0xFFAAA4B4); text(c,"• Lyrics synced",646,515,0xFF77D89A);
+        round(c,588,480,48,48,7,0xFF51426D); var art=AlbumArtCache.get(track.imageUrl());
+        if(art!=null)c.drawTexture(art,sx(588),sy(480),0.0f,0.0f,ss(48),ss(48),ss(48),ss(48)); else text(c,"♫",602,494,0xFFFFFFFF);
+        text(c,track.title(),646,480,0xFFFFFFFF); text(c,track.artist(),646,496,0xFFAAA4B4); text(c,"• Lyrics synced",646,515,0xFF77D89A);
         text(c,time(track.progressMs())+" / "+time(track.durationMs()),901,490,0xFFAAA4B4); text(c,"◀   "+(track.playing()?"Ⅱ":"▶")+"   ▶",1039,492,0xFFFFFFFF);
         round(c,589,530,616,3,2,0xFF51465E); round(c,589,530,616*(float)Math.min(1,track.progressMs()/(double)Math.max(1,track.durationMs())),3,2,PURPLE);
     }
